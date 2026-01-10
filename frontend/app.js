@@ -347,7 +347,6 @@ async function showDashboard() {
 
     if (!dashboardContainer.dataset.initialized) {
         console.log("HanaView Dashboard Initialized");
-        initTabs();
         fetchDataAndRender();
         initSwipeNavigation();
 
@@ -455,29 +454,6 @@ async function showDashboard() {
                     `<div class="card"><p>データの読み込みに失敗しました: ${error.message}</p></div>`;
             }
         }
-    }
-
-    // --- Tab-switching logic ---
-    function initTabs() {
-        const tabContainer = document.querySelector('.tab-container');
-        tabContainer.addEventListener('click', (e) => {
-            const button = e.target.closest('.tab-button');
-            if (!button) return;
-
-            const targetTab = button.dataset.tab;
-
-            document.querySelectorAll('.tab-button').forEach(b => {
-                const isActive = b.dataset.tab === targetTab;
-                b.classList.toggle('active', isActive);
-            });
-
-            document.querySelectorAll('.tab-pane').forEach(p => {
-                const isActive = p.id === `${targetTab}-content`;
-                p.classList.toggle('active', isActive);
-            });
-
-            setTimeout(() => window.scrollTo(0, 0), 0);
-        });
     }
 
     // --- Existing rendering functions ---
