@@ -41,13 +41,6 @@
 
         <div class="tab-container">
             <button class="tab-button active" data-tab="market">市況</button>
-            <button class="tab-button" data-tab="news">ニュース</button>
-            <button class="tab-button" data-tab="nasdaq">Nasdaq</button>
-            <button class="tab-button" data-tab="sp500">SP500</button>
-            <button class="tab-button" data-tab="indicators">指標</button>
-            <button class="tab-button" data-tab="column">コラム</button>
-            <button class="tab-button" data-tab="hwb200">200MA</button>
-            <button class="tab-button" data-tab="algo">Algo</button>
         </div>
 
         <main id="dashboard-content">
@@ -56,66 +49,6 @@
                     <p>Loading market data...</p>
                     <div class="loading-spinner"></div>
                 </div>
-            </div>
-            <div id="news-content" class="tab-pane"></div>
-            <div id="nasdaq-content" class="tab-pane">
-                <div id="nasdaq-heatmap-1d"></div>
-                <div id="nasdaq-heatmap-1w"></div>
-                <div id="nasdaq-heatmap-1m"></div>
-                <div id="nasdaq-commentary"></div>
-            </div>
-            <div id="sp500-content" class="tab-pane">
-                <div id="sp500-heatmap-1d"></div>
-                <div id="sp500-heatmap-1w"></div>
-                <div id="sp500-heatmap-1m"></div>
-                <div id="sp500-commentary"></div>
-            </div>
-            <div id="indicators-content" class="tab-pane"></div>
-            <div id="column-content" class="tab-pane"></div>
-            <div id="hwb200-content" class="tab-pane">
-                <div class="hwb-controls">
-                    <input type="text" id="hwb-ticker-input" class="hwb-ticker-input" placeholder="ティッカーを入力 (例: AAPL)">
-                    <button id="hwb-analyze-btn" class="hwb-action-btn">
-                        検索
-                    </button>
-                    <div id="hwb-status" class="hwb-status-info"></div>
-                </div>
-                <div id="hwb-loading" class="loading-container" style="display: none;">
-                    <p>読み込み中...</p>
-                    <div class="loading-spinner"></div>
-                </div>
-                <div id="hwb-content">
-                    <div class="card">
-                        <p>データがありません。</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Algoタブコンテンツ -->
-            <div id="algo-content" class="tab-pane">
-              <div class="hwb-controls">
-                  <input type="text" id="algo-ticker-input" class="hwb-ticker-input" placeholder="ティッカーを入力 (例: NVDA)">
-                  <button id="algo-analyze-btn" class="hwb-action-btn">
-                      検索
-                  </button>
-                  <div id="algo-status" class="algo-status-info"></div>
-              </div>
-
-              <!-- AIポートフォリオ -->
-              <div id="algo-portfolios" class="algo-portfolios-container"></div>
-
-              <!-- スクリーナーボタン -->
-              <div id="algo-screener-buttons" class="screener-buttons">
-                <button class="screener-btn active" data-screener="momentum_97">Momentum 97</button>
-                <button class="screener-btn" data-screener="explosive_eps">Explosive EPS</button>
-                <button class="screener-btn" data-screener="up_on_volume">Up on Volume</button>
-                <button class="screener-btn" data-screener="top_2pct_rs">Top 2% RS</button>
-                <button class="screener-btn" data-screener="bullish_4pct">4% Bullish</button>
-                <button class="screener-btn" data-screener="healthy_chart">Healthy Chart</button>
-              </div>
-
-              <!-- コンテンツエリア -->
-              <div id="algo-content-area"></div>
             </div>
         </main>
     </div>
