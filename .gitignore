@@ -1,0 +1,12 @@
+# Ignore the data directory, which contains the SQLite cache and generated JSON files.
+/data/
+
+# Ignore Python bytecode and cache
+__pycache__/
+*.pyc
+
+# Ignore scratch directory for verification scripts
+/jules-scratch/
+
+# Ignore log files
+*.log
