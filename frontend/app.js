@@ -280,9 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 marketHistory = data.history;
                 currentDateIndex = marketHistory.length - 1; // Default to latest
 
-                // Render Chart
-                renderMarketChart(marketHistory);
-
+                // No Plotly rendering needed, image is loaded via HTML
                 // Setup Controls
                 setupControls();
 
@@ -300,132 +298,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error("Failed to fetch market analysis:", error);
         }
-    }
-
-    function renderMarketChart(history) {
-        const dates = history.map(h => h.date);
-        const closes = history.map(h => h.close);
-        const tsvs = history.map(h => h.tsv);
-        const fastKs = history.map(h => h.fast_k);
-        const slowDs = history.map(h => h.slow_d);
-
-        // Background Shapes for Cycle Phases
-        const shapes = [];
-        let currentShape = null;
-
-        history.forEach((h, i) => {
-            let color = null;
-            if (h.market_status === 'Green') color = 'rgba(135, 206, 235, 0.2)'; // SkyBlue
-            else if (h.market_status === 'Red') color = 'rgba(240, 128, 128, 0.2)'; // LightCoral
-
-            if (color) {
-                if (currentShape && currentShape.fillcolor === color && i === currentShape.endIndex + 1) {
-                    currentShape.endIndex = i;
-                    currentShape.x1 = dates[i];
-                } else {
-                    if (currentShape) {
-                        shapes.push({
-                            type: 'rect',
-                            xref: 'x', yref: 'paper',
-                            x0: currentShape.x0, x1: currentShape.x1,
-                            y0: 0, y1: 1,
-                            fillcolor: currentShape.fillcolor,
-                            line: {width: 0},
-                            layer: 'below'
-                        });
-                    }
-                    currentShape = {
-                        x0: dates[i], x1: dates[i],
-                        endIndex: i,
-                        fillcolor: color
-                    };
-                }
-            } else {
-                if (currentShape) {
-                     shapes.push({
-                            type: 'rect',
-                            xref: 'x', yref: 'paper',
-                            x0: currentShape.x0, x1: currentShape.x1,
-                            y0: 0, y1: 1,
-                            fillcolor: currentShape.fillcolor,
-                            line: {width: 0},
-                            layer: 'below'
-                        });
-                    currentShape = null;
-                }
-            }
-        });
-        if (currentShape) {
-             shapes.push({
-                    type: 'rect',
-                    xref: 'x', yref: 'paper',
-                    x0: currentShape.x0, x1: currentShape.x1,
-                    y0: 0, y1: 1,
-                    fillcolor: currentShape.fillcolor,
-                    line: {width: 0},
-                    layer: 'below'
-                });
-        }
-
-        const traceCandle = {
-            x: dates,
-            close: closes,
-            high: history.map(h => h.high),
-            low: history.map(h => h.low),
-            open: history.map(h => h.open),
-            type: 'candlestick',
-            name: 'Price',
-            xaxis: 'x',
-            yaxis: 'y'
-        };
-
-        const traceTSV = {
-            x: dates,
-            y: tsvs,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'TSV',
-            line: {color: 'teal', width: 1.5},
-            xaxis: 'x',
-            yaxis: 'y2'
-        };
-
-        const traceFastK = {
-            x: dates,
-            y: fastKs,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Fast K',
-            line: {color: 'cyan', width: 1.5},
-            xaxis: 'x',
-            yaxis: 'y3'
-        };
-
-        const traceSlowD = {
-            x: dates,
-            y: slowDs,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Slow D',
-            line: {color: 'orange', width: 1.5},
-            xaxis: 'x',
-            yaxis: 'y3'
-        };
-
-        const layout = {
-            dragmode: 'pan',
-            showlegend: false,
-            grid: {rows: 3, columns: 1, pattern: 'independent', roworder: 'top to bottom'},
-            xaxis: {rangeslider: {visible: false}, type: 'date'},
-            yaxis: {title: 'Price', domain: [0.55, 1]},
-            yaxis2: {title: 'TSV', domain: [0.3, 0.5]},
-            yaxis3: {title: 'StochRSI', domain: [0, 0.25], range: [0, 100]},
-            shapes: shapes,
-            margin: {l: 40, r: 10, t: 30, b: 30},
-            height: 450
-        };
-
-        Plotly.newPlot('market-chart', [traceCandle, traceTSV, traceFastK, traceSlowD], layout, {responsive: true});
     }
 
     function setupControls() {
@@ -474,24 +346,30 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (historyItem.status_text.includes("Red")) badge.classList.add('status-red');
         else badge.classList.add('status-neutral');
 
-        // Move Vertical Line on Chart
-        const verticalLine = {
-            type: 'line',
-            x0: historyItem.date,
-            x1: historyItem.date,
-            y0: 0,
-            y1: 1,
-            xref: 'x',
-            yref: 'paper',
-            line: {color: 'black', width: 1, dash: 'dot'}
-        };
+        // Move Vertical Line on Image (CSS)
+        const chartWrapper = document.getElementById('chart-wrapper');
+        const cursor = document.getElementById('chart-cursor');
 
-        // Preserve existing shapes
-        const graphDiv = document.getElementById('market-chart');
-        if (graphDiv && graphDiv.layout && graphDiv.layout.shapes) {
-            const baseShapes = graphDiv.layout.shapes.filter(s => s.line.dash !== 'dot');
-            const newShapes = [...baseShapes, verticalLine];
-            Plotly.relayout('market-chart', {shapes: newShapes});
+        if (chartWrapper && cursor && marketHistory.length > 0) {
+            // Logic to calculate position
+            // The chart image generated by mplfinance has margins.
+            // With tight_layout and figsize(10,8), the plot area is roughly 80-90% of width.
+            // This is a rough approximation. Ideally we'd know the exact pixel bounds.
+            // Let's assume standard margins.
+
+            // Adjust these offsets based on the actual generated image appearance
+            const marginLeft = 0.12; // 12% from left
+            const marginRight = 0.05; // 5% from right
+            const plotWidthPct = 1.0 - marginLeft - marginRight;
+
+            // Calculate percentage position
+            // index 0 = left edge of plot area
+            // index max = right edge of plot area
+            const pct = index / (marketHistory.length - 1);
+            const leftPos = (marginLeft + (pct * plotWidthPct)) * 100;
+
+            cursor.style.left = `${leftPos}%`;
+            cursor.style.display = 'block';
         }
 
         // Fetch Daily Data (Strong Stocks)

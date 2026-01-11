@@ -4,6 +4,7 @@ import datetime
 import logging
 import pandas as pd
 from backend.rdt_logic import get_market_analysis_data, run_screener_for_tickers
+from backend.chart_generator import generate_market_chart
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 # If running as python -m backend.data_fetcher from root
 PROJECT_ROOT = os.getcwd()
 DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
+FRONTEND_ASSETS_DIR = os.path.join(PROJECT_ROOT, 'frontend', 'assets')
 STOCK_CSV_PATH = os.path.join(PROJECT_ROOT, 'backend', 'stock.csv')
 
 def load_tickers():
@@ -41,6 +43,7 @@ def load_tickers():
 
 def main():
     os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(FRONTEND_ASSETS_DIR, exist_ok=True)
 
     logger.info("Generating Market Analysis Data (6 months)...")
     market_data, spy_df = get_market_analysis_data(period="6mo")
@@ -48,6 +51,11 @@ def main():
     if not market_data:
         logger.error("Failed to generate market data.")
         return
+
+    # Generate Chart Image
+    chart_path = os.path.join(FRONTEND_ASSETS_DIR, "market_chart.png")
+    logger.info(f"Generating chart image at {chart_path}...")
+    generate_market_chart(spy_df, chart_path)
 
     # Save market analysis (Chart Data)
     analysis_file = os.path.join(DATA_DIR, "market_analysis.json")
