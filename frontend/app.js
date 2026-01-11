@@ -104,154 +104,6 @@ async function fetchWithAuth(url, options = {}) {
     return response;
 }
 
-// --- NotificationManager ---
-class NotificationManager {
-    constructor() {
-        this.isSupported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
-        this.vapidPublicKey = null;
-    }
-
-    async init() {
-        if (!this.isSupported) {
-            console.log('Push notifications are not supported');
-            return;
-        }
-        console.log('Initializing NotificationManager...');
-        try {
-            const response = await fetch('/api/vapid-public-key');
-            const data = await response.json();
-            this.vapidPublicKey = data.public_key;
-            console.log('VAPID public key obtained');
-        } catch (error) {
-            console.error('Failed to get VAPID public key:', error);
-            return;
-        }
-        const permission = await this.requestPermission();
-        if (permission) {
-            await this.subscribeUser();
-        }
-        navigator.serviceWorker.addEventListener('message', event => {
-            if (event.data.type === 'data-updated' && event.data.data) {
-                console.log('Data updated via push notification');
-                // Reload dashboard logic
-                if (typeof fetchDataAndRender === 'function') {
-                    fetchDataAndRender();
-                }
-                this.showInAppNotification('データが更新されました');
-            }
-        });
-    }
-
-    async requestPermission() {
-        const permission = await Notification.requestPermission();
-        console.log('Notification permission:', permission);
-        return permission === 'granted';
-    }
-
-    async subscribeUser() {
-        try {
-            const registration = await navigator.serviceWorker.ready;
-            let subscription = await registration.pushManager.getSubscription();
-            if (!subscription) {
-                const convertedVapidKey = this.urlBase64ToUint8Array(this.vapidPublicKey);
-                subscription = await registration.pushManager.subscribe({
-                    userVisibleOnly: true,
-                    applicationServerKey: convertedVapidKey
-                });
-            }
-            await this.sendSubscriptionToServer(subscription);
-            if ('sync' in registration) {
-                await registration.sync.register('data-sync');
-            }
-        } catch (error) {
-            console.error('Failed to subscribe user:', error);
-        }
-    }
-
-    async sendSubscriptionToServer(subscription) {
-    try {
-        if (typeof AuthManager === 'undefined') {
-            console.error('❌ AuthManager is not defined yet');
-            throw new Error('認証マネージャーが読み込まれていません。ページを再読み込みしてください。');
-        }
-
-        if (!AuthManager.isAuthenticated()) {
-            console.warn('Cannot register push subscription: not authenticated');
-            return;
-        }
-
-        console.log('📤 Sending push subscription to server...');
-
-        if (typeof fetchWithAuth === 'undefined') {
-            console.error('❌ fetchWithAuth is not defined yet');
-            throw new Error('通信機能が読み込まれていません。ページを再読み込みしてください。');
-        }
-
-        const response = await fetchWithAuth('/api/subscribe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(subscription)
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Server returned ${response.status}: ${errorText}`);
-        }
-
-        const result = await response.json();
-        console.log('✅ Push subscription registered:', result);
-        this.showInAppNotification(`通知が有効になりました (権限: ${result.permission})`);
-    } catch (error) {
-        console.error('❌ Error sending subscription to server:', error);
-
-        let errorMessage = error.message || '不明なエラー';
-        if (error.message.includes('認証マネージャー') || error.message.includes('通信機能')) {
-            errorMessage += '\n\niPhone PWAでこの問題が発生する場合：\n1. アプリを完全に終了\n2. Safariでページを開き直す\n3. 再度ホーム画面に追加';
-        }
-
-        alert(`⚠️ Push通知の登録に失敗しました:\n${errorMessage}`);
-    }
-}
-
-    urlBase64ToUint8Array(base64String) {
-        const padding = '='.repeat((4 - base64String.length % 4) % 4);
-        const base64 = (base64String + padding)
-            .replace(/\-/g, '+')
-            .replace(/_/g, '/');
-        const rawData = window.atob(base64);
-        const outputArray = new Uint8Array(rawData.length);
-        for (let i = 0; i < rawData.length; ++i) {
-            outputArray[i] = rawData.charCodeAt(i);
-        }
-        return outputArray;
-    }
-
-    showInAppNotification(message) {
-        const toast = document.createElement('div');
-        toast.className = 'toast-notification';
-        toast.textContent = message;
-        toast.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: #006B6B;
-            color: white;
-            padding: 15px 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 10000;
-            animation: slideIn 0.3s ease-out;
-        `;
-        document.body.appendChild(toast);
-        setTimeout(() => {
-            toast.style.animation = 'slideOut 0.3s ease-out';
-            setTimeout(() => {
-                document.body.removeChild(toast);
-            }, 300);
-        }, 3000);
-    }
-}
-
 // ==========================================
 // DOMContentLoaded以降
 // ==========================================
@@ -320,17 +172,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('❌ Required dependencies not loaded. Skipping notification setup.');
             alert('⚠️ アプリの初期化に問題があります。ページを再読み込みしてください。');
             return;
-        }
-
-        if (!globalNotificationManager) {
-            globalNotificationManager = new NotificationManager();
-            try {
-                await new Promise(resolve => setTimeout(resolve, 100));
-                await globalNotificationManager.init();
-                console.log('✅ Notifications initialized');
-            } catch (error) {
-                console.error('❌ Notification initialization failed:', error);
-            }
         }
 
         if (!dashboardContainer.dataset.initialized) {
@@ -572,7 +413,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const layout = {
-            dragmode: 'pan', // Changed to pan for better mobile experience
+            dragmode: 'pan',
             showlegend: false,
             grid: {rows: 3, columns: 1, pattern: 'independent', roworder: 'top to bottom'},
             xaxis: {rangeslider: {visible: false}, type: 'date'},
@@ -663,7 +504,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await response.json();
                 renderStrongStocks(data.strong_stocks);
             } else {
-                contentDiv.innerHTML = '<p style="text-align: center; color: #757575;">No detailed data available for this date.</p>';
+                // Check if this date is 'today' or close enough?
+                // Or simply show no data
+                contentDiv.innerHTML = '<p style="text-align: center; color: #757575;">No Strong Stocks data available for this date.</p>';
             }
         } catch (error) {
              contentDiv.innerHTML = '<p style="text-align: center; color: #757575;">Error loading data.</p>';
@@ -677,33 +520,30 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Match the reference image style
+        // Image shows:
+        // Universe: 5,626 Scanned: 5,557 Matches Found: 7 (We might not have these stats readily available unless passed from backend)
+        // Then list of blocks: [ Ticker (RRS: ..., RVol: ..., ADR%: ...) ]
+
+        // I will implement the list of blocks style.
+
         let html = `
-            <table class="strong-stocks-table">
-                <thead>
-                    <tr>
-                        <th>Ticker</th>
-                        <th>Price</th>
-                        <th>RRS</th>
-                        <th>RVol</th>
-                        <th>ADR%</th>
-                    </tr>
-                </thead>
-                <tbody>
+            <div style="margin-bottom: 10px; font-size: 0.9em; text-align: right; color: #555;">
+                Matches Found: ${stocks.length}
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
         `;
 
         stocks.forEach(s => {
             html += `
-                <tr>
-                    <td style="font-weight:bold;">${s.Ticker}</td>
-                    <td>${s.Close}</td>
-                    <td>${s.RRS}</td>
-                    <td>${s.RVol}</td>
-                    <td>${s.ADR}%</td>
-                </tr>
+                <div style="border: 2px solid black; padding: 10px; font-weight: bold; font-size: 1.1em; background: white;">
+                    <span style="font-size: 1.2em;">${s.ticker}</span>
+                    (RRS: ${s.rrs}, RVol: ${s.rvol}, ADR%: ${s.adr_pct}%)
+                </div>
             `;
         });
 
-        html += '</tbody></table>';
+        html += '</div>';
         contentDiv.innerHTML = html;
     }
 

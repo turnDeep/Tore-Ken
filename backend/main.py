@@ -170,6 +170,7 @@ def verify_pin(pin_data: PinVerification, response: Response, request: Request):
     """
     PINを検証し、権限レベルに応じて異なるトークンを生成する。
     """
+    print(f"DEBUG: Received PIN verification request. PIN: '{pin_data.pin}', Expected: '{AUTH_PIN}'")
     permission = None
     if URA_PIN and pin_data.pin == URA_PIN:
         permission = "ura"
@@ -243,6 +244,9 @@ def get_daily_data(date_key: str, current_user: str = Depends(get_current_user))
 
     path = os.path.join(DATA_DIR, f"{date_key}.json")
     if not os.path.exists(path):
+         # If exact date not found, maybe return a default or just 404.
+         # For the slider, we might hit days without data (weekends etc if not handled).
+         # But the slider should be built from the chart history which has valid dates.
          raise HTTPException(status_code=404, detail="Data for this date not found.")
     with open(path, "r", encoding='utf-8') as f:
         return json.load(f)
