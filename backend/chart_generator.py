@@ -81,7 +81,7 @@ def generate_market_chart(df, output_path):
     # But if we use 'tight_layout', it might vary.
     # We will use a fixed figure size.
 
-    s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
+    s = mpf.make_mpf_style(base_mpf_style='yahoo', marketcolors=mc, gridstyle=':', y_on_right=True, facecolor='white', figcolor='white')
 
     # Plot
     # We use returnfig=True to save manually if needed, or just savefig directly.
