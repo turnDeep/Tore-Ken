@@ -225,18 +225,49 @@ def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
+@app.get("/api/market-analysis")
+def get_market_analysis(current_user: str = Depends(get_current_user)):
+    """Returns the market analysis chart data."""
+    path = os.path.join(DATA_DIR, "market_analysis.json")
+    if not os.path.exists(path):
+         raise HTTPException(status_code=404, detail="Market analysis data not found.")
+    with open(path, "r", encoding='utf-8') as f:
+        return json.load(f)
+
+@app.get("/api/daily/{date_key}")
+def get_daily_data(date_key: str, current_user: str = Depends(get_current_user)):
+    """Returns the daily data (Strong Stocks, Status) for a specific date (YYYYMMDD)."""
+    # Validation
+    if not re.match(r'^\d{8}$', date_key):
+         raise HTTPException(status_code=400, detail="Invalid date format.")
+
+    path = os.path.join(DATA_DIR, f"{date_key}.json")
+    if not os.path.exists(path):
+         raise HTTPException(status_code=404, detail="Data for this date not found.")
+    with open(path, "r", encoding='utf-8') as f:
+        return json.load(f)
+
 @app.get("/api/data")
-def get_market_data(current_user: str = Depends(get_current_user)):
-    """Endpoint to get the latest market data."""
+def get_latest_data(current_user: str = Depends(get_current_user)):
+    """Endpoint to get the latest market data (latest.json)."""
     try:
+        # Try latest.json first
+        path = os.path.join(DATA_DIR, "latest.json")
+        if os.path.exists(path):
+            with open(path, "r", encoding='utf-8') as f:
+                return json.load(f)
+
+        # Fallback to old logic
         data_file = get_latest_data_file()
         if data_file is None or not os.path.exists(data_file):
             raise HTTPException(status_code=404, detail="Data file not found.")
         with open(data_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
         return data
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error reading latest market data:")
+        print(f"Error reading latest market data: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Could not retrieve market data.")
 
