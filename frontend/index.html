@@ -3,12 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>朝の５分市況チェック</title>
+    <title>トレけん</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#00c853"/>
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <style>
+        .subtitle {
+            font-size: 0.8em;
+            color: #555;
+            margin-top: -5px;
+            text-align: center;
+        }
+        .market-analysis-container {
+            position: relative;
+            background: #fff;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        .controls-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 10px;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+        .control-btn {
+            background: #00c853;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .control-btn:disabled {
+            background: #ccc;
+        }
+        .date-display {
+            font-weight: bold;
+            font-size: 1.1em;
+            text-align: center;
+        }
+        .status-text {
+            font-size: 0.9em;
+            margin-left: 10px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            color: white;
+            font-weight: bold;
+        }
+        .status-green { background-color: #2e7d32; }
+        .status-red { background-color: #c62828; }
+        .status-neutral { background-color: #757575; }
+
+        /* Strong Stocks Table */
+        .strong-stocks-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .strong-stocks-table th, .strong-stocks-table td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9em;
+        }
+        .strong-stocks-table th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+            color: #333;
+        }
+        .strong-stocks-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 5px;
+        }
+        .slider-container {
+            width: 100%;
+            margin: 0 10px;
+        }
+        #date-slider {
+            width: 100%;
+        }
+    </style>
 </head>
 <body>
     <div id="auth-container" class="auth-container">
@@ -30,27 +117,56 @@
     </div>
     <div class="container" style="display: none;">
         <header class="header">
-            <h1>朝の<span style="color: #FF00A5;">５分</span>市況チェック</h1>
+            <p class="subtitle">トレードに失敗しないためにけんじつに勉強してみた。</p>
+            <h1>トレけん</h1>
             <p class="last-updated" id="last-updated">Last updated: --</p>
-        <!-- 通知設定ボタンを追加 -->
-        <button id="notification-setup-btn" class="notification-btn" style="display: none;">
-            🔔 通知を有効にする
-        </button>
-        <span id="notification-status" class="notification-status"></span>
+            <!-- 通知設定ボタンを追加 -->
+            <button id="notification-setup-btn" class="notification-btn" style="display: none;">
+                🔔 通知を有効にする
+            </button>
+            <span id="notification-status" class="notification-status"></span>
         </header>
 
         <main id="dashboard-content">
-            <div id="market-content" class="tab-pane active">
-                <div class="loading-container">
-                    <p>Loading market data...</p>
-                    <div class="loading-spinner"></div>
+            <!-- Market Analysis Section -->
+            <div class="market-section">
+                <h3>Market Analysis</h3>
+                <div class="market-analysis-container">
+                    <!-- Image container with relative positioning for overlay -->
+                    <div id="chart-wrapper" style="position: relative; width: 100%; overflow: hidden;">
+                        <img id="market-chart-img" src="assets/market_chart.png" alt="Market Analysis Chart" style="width: 100%; display: block;">
+                        <!-- Overlay line -->
+                        <div id="chart-cursor" style="position: absolute; top: 0; bottom: 0; width: 2px; background-color: black; border-left: 1px dashed black; opacity: 0.7; pointer-events: none; display: none;"></div>
+                    </div>
+
+                    <div class="controls-container">
+                        <button id="prev-btn" class="control-btn">&lt;</button>
+                        <div class="slider-container">
+                             <input type="range" id="date-slider" min="0" max="0" value="0">
+                        </div>
+                        <button id="next-btn" class="control-btn">&gt;</button>
+                    </div>
+
+                    <div style="text-align: center; margin-top: 10px;">
+                        <span id="selected-date" class="date-display">--</span>
+                        <span id="market-status-badge" class="status-text status-neutral">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Strong Stocks Section -->
+            <div class="market-section">
+                <div class="strong-stocks-header">
+                    <h3>Strong Stocks</h3>
+                </div>
+                <div class="card">
+                    <div id="strong-stocks-content" style="overflow-x: auto;">
+                        <p style="text-align: center; color: #757575;">Select a date to view Strong Stocks</p>
+                    </div>
                 </div>
             </div>
         </main>
     </div>
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="app.js"></script>
     <script>
         if ('serviceWorker' in navigator) {

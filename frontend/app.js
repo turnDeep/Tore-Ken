@@ -104,156 +104,6 @@ async function fetchWithAuth(url, options = {}) {
     return response;
 }
 
-// --- NotificationManager ---
-class NotificationManager {
-    constructor() {
-        this.isSupported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
-        this.vapidPublicKey = null;
-    }
-
-    async init() {
-        if (!this.isSupported) {
-            console.log('Push notifications are not supported');
-            return;
-        }
-        console.log('Initializing NotificationManager...');
-        try {
-            const response = await fetch('/api/vapid-public-key');
-            const data = await response.json();
-            this.vapidPublicKey = data.public_key;
-            console.log('VAPID public key obtained');
-        } catch (error) {
-            console.error('Failed to get VAPID public key:', error);
-            return;
-        }
-        const permission = await this.requestPermission();
-        if (permission) {
-            await this.subscribeUser();
-        }
-        navigator.serviceWorker.addEventListener('message', event => {
-            if (event.data.type === 'data-updated' && event.data.data) {
-                console.log('Data updated via push notification');
-                if (typeof renderAllData === 'function') {
-                    renderAllData(event.data.data);
-                }
-                this.showInAppNotification('データが更新されました');
-            }
-        });
-    }
-
-    async requestPermission() {
-        const permission = await Notification.requestPermission();
-        console.log('Notification permission:', permission);
-        return permission === 'granted';
-    }
-
-    async subscribeUser() {
-        try {
-            const registration = await navigator.serviceWorker.ready;
-            let subscription = await registration.pushManager.getSubscription();
-            if (!subscription) {
-                const convertedVapidKey = this.urlBase64ToUint8Array(this.vapidPublicKey);
-                subscription = await registration.pushManager.subscribe({
-                    userVisibleOnly: true,
-                    applicationServerKey: convertedVapidKey
-                });
-            }
-            await this.sendSubscriptionToServer(subscription);
-            if ('sync' in registration) {
-                await registration.sync.register('data-sync');
-            }
-        } catch (error) {
-            console.error('Failed to subscribe user:', error);
-        }
-    }
-
-    async sendSubscriptionToServer(subscription) {
-    try {
-        // AuthManagerが存在するか確認（iPhone PWA対策）
-        if (typeof AuthManager === 'undefined') {
-            console.error('❌ AuthManager is not defined yet');
-            throw new Error('認証マネージャーが読み込まれていません。ページを再読み込みしてください。');
-        }
-
-        if (!AuthManager.isAuthenticated()) {
-            console.warn('Cannot register push subscription: not authenticated');
-            return;
-        }
-
-        console.log('📤 Sending push subscription to server...');
-
-        // fetchWithAuthも存在確認（念のため）
-        if (typeof fetchWithAuth === 'undefined') {
-            console.error('❌ fetchWithAuth is not defined yet');
-            throw new Error('通信機能が読み込まれていません。ページを再読み込みしてください。');
-        }
-
-        const response = await fetchWithAuth('/api/subscribe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(subscription)
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Server returned ${response.status}: ${errorText}`);
-        }
-
-        const result = await response.json();
-        console.log('✅ Push subscription registered:', result);
-        this.showInAppNotification(`通知が有効になりました (権限: ${result.permission})`);
-    } catch (error) {
-        console.error('❌ Error sending subscription to server:', error);
-
-        // より詳細なエラーメッセージ
-        let errorMessage = error.message || '不明なエラー';
-        if (error.message.includes('認証マネージャー') || error.message.includes('通信機能')) {
-            errorMessage += '\n\niPhone PWAでこの問題が発生する場合：\n1. アプリを完全に終了\n2. Safariでページを開き直す\n3. 再度ホーム画面に追加';
-        }
-
-        alert(`⚠️ Push通知の登録に失敗しました:\n${errorMessage}`);
-    }
-}
-
-    urlBase64ToUint8Array(base64String) {
-        const padding = '='.repeat((4 - base64String.length % 4) % 4);
-        const base64 = (base64String + padding)
-            .replace(/\-/g, '+')
-            .replace(/_/g, '/');
-        const rawData = window.atob(base64);
-        const outputArray = new Uint8Array(rawData.length);
-        for (let i = 0; i < rawData.length; ++i) {
-            outputArray[i] = rawData.charCodeAt(i);
-        }
-        return outputArray;
-    }
-
-    showInAppNotification(message) {
-        const toast = document.createElement('div');
-        toast.className = 'toast-notification';
-        toast.textContent = message;
-        toast.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: #006B6B;
-            color: white;
-            padding: 15px 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 10000;
-            animation: slideIn 0.3s ease-out;
-        `;
-        document.body.appendChild(toast);
-        setTimeout(() => {
-            toast.style.animation = 'slideOut 0.3s ease-out';
-            setTimeout(() => {
-                document.body.removeChild(toast);
-            }, 300);
-        }, 3000);
-    }
-}
-
 // ==========================================
 // DOMContentLoaded以降
 // ==========================================
@@ -274,6 +124,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let failedAttempts = 0;
     const MAX_ATTEMPTS = 5;
     let globalNotificationManager = null;
+    let marketHistory = [];
+    let currentDateIndex = -1;
 
     // ✅ 認証エラーイベントのリスナー追加
     window.addEventListener('auth-required', () => {
@@ -286,7 +138,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (localStorage.getItem('auth_token') && !localStorage.getItem('auth_permission')) {
             console.log('🧹 Cleaning old authentication data...');
             await AuthManager.clearAuthData();
-            // Service Workerの登録も解除
             if ('serviceWorker' in navigator) {
                 const registrations = await navigator.serviceWorker.getRegistrations();
                 for (let registration of registrations) {
@@ -294,9 +145,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             alert('⚠️ 認証システムが更新されました。再度ログインしてください。');
-            // ✅ ページをリロードしてService Workerを再登録
             location.reload();
-            return; // これ以降の処理を実行しない
+            return;
         }
 
         try {
@@ -314,45 +164,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function applyTabPermissions() {
-        // Permissions logic removed as there is only one tab
-        console.log("Applying permissions: All users see Market tab.");
-    }
+    async function showDashboard() {
+        if (authContainer) authContainer.style.display = 'none';
+        if (dashboardContainer) dashboardContainer.style.display = 'block';
 
-async function showDashboard() {
-    if (authContainer) authContainer.style.display = 'none';
-    if (dashboardContainer) dashboardContainer.style.display = 'block';
+        if (typeof AuthManager === 'undefined' || typeof fetchWithAuth === 'undefined') {
+            console.error('❌ Required dependencies not loaded. Skipping notification setup.');
+            alert('⚠️ アプリの初期化に問題があります。ページを再読み込みしてください。');
+            return;
+        }
 
-    applyTabPermissions();
-
-    // NotificationManager初期化前に必要な依存関係を確認
-    if (typeof AuthManager === 'undefined' || typeof fetchWithAuth === 'undefined') {
-        console.error('❌ Required dependencies not loaded. Skipping notification setup.');
-        alert('⚠️ アプリの初期化に問題があります。ページを再読み込みしてください。');
-        return;
-    }
-
-    if (!globalNotificationManager) {
-        globalNotificationManager = new NotificationManager();
-        try {
-            // 少し待機してからNotificationManagerを初期化（iPhone PWA対策）
-            await new Promise(resolve => setTimeout(resolve, 100));
-            await globalNotificationManager.init();
-            console.log('✅ Notifications initialized');
-        } catch (error) {
-            console.error('❌ Notification initialization failed:', error);
-            alert('⚠️ Push通知の登録に失敗しました。ページを再読み込みしてください。');
+        if (!dashboardContainer.dataset.initialized) {
+            console.log("HanaView Dashboard Initialized");
+            fetchDataAndRender();
+            dashboardContainer.dataset.initialized = 'true';
         }
     }
-
-    if (!dashboardContainer.dataset.initialized) {
-        console.log("HanaView Dashboard Initialized");
-        fetchDataAndRender();
-        initSwipeNavigation();
-
-        dashboardContainer.dataset.initialized = 'true';
-    }
-}
 
     function showAuthScreen() {
         if (authContainer) authContainer.style.display = 'flex';
@@ -440,115 +267,162 @@ async function showDashboard() {
         if (submitBtn) submitBtn.style.display = isLoading ? 'none' : 'block';
     }
 
-    // --- Dashboard Functions ---
+    // --- Dashboard Functions (Refactored) ---
 
     async function fetchDataAndRender() {
         try {
-            const response = await fetchWithAuth('/api/data');
+            const response = await fetchWithAuth('/api/market-analysis');
+            if (!response.ok) throw new Error("Failed to load market analysis");
+
             const data = await response.json();
-            renderAllData(data);
-        } catch (error) {
-            if (error.message !== 'Authentication required') {
-                console.error("Failed to fetch data:", error);
-                document.getElementById('dashboard-content').innerHTML =
-                    `<div class="card"><p>データの読み込みに失敗しました: ${error.message}</p></div>`;
+
+            if (data.history && data.history.length > 0) {
+                marketHistory = data.history;
+                currentDateIndex = marketHistory.length - 1; // Default to latest
+
+                // No Plotly rendering needed, image is loaded via HTML
+                // Setup Controls
+                setupControls();
+
+                // Load Initial Daily Data
+                updateDailyView(currentDateIndex);
+
+                // Update Last Updated
+                const lastUpdatedEl = document.getElementById('last-updated');
+                if (lastUpdatedEl && data.last_updated) {
+                    lastUpdatedEl.textContent = `Last updated: ${new Date(data.last_updated).toLocaleString('ja-JP')}`;
+                }
+            } else {
+                console.error("No history data found");
             }
+        } catch (error) {
+            console.error("Failed to fetch market analysis:", error);
         }
     }
 
-    // --- Existing rendering functions ---
-    function formatDateForDisplay(dateInput) {
-        if (!dateInput) return '';
-        try {
-            const date = new Date(dateInput);
-            if (isNaN(date.getTime())) return '';
-            return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-        } catch (e) { return ''; }
+    function setupControls() {
+        const slider = document.getElementById('date-slider');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+
+        slider.min = 0;
+        slider.max = marketHistory.length - 1;
+        slider.value = currentDateIndex;
+
+        slider.addEventListener('input', (e) => {
+            const idx = parseInt(e.target.value);
+            updateDailyView(idx);
+        });
+
+        prevBtn.addEventListener('click', () => {
+            if (currentDateIndex > 0) {
+                updateDailyView(currentDateIndex - 1);
+                slider.value = currentDateIndex;
+            }
+        });
+
+        nextBtn.addEventListener('click', () => {
+            if (currentDateIndex < marketHistory.length - 1) {
+                updateDailyView(currentDateIndex + 1);
+                slider.value = currentDateIndex;
+            }
+        });
     }
 
-    function renderLightweightChart(containerId, data, title) {
-        const container = document.getElementById(containerId);
-        if (!container || !data || data.length === 0) {
-            container.innerHTML = `<p>Chart data for ${title} is not available.</p>`;
+    async function updateDailyView(index) {
+        currentDateIndex = index;
+        const historyItem = marketHistory[index];
+        const dateKey = historyItem.date_key; // YYYYMMDD
+
+        // Update Date Display
+        document.getElementById('selected-date').textContent = historyItem.date;
+
+        // Update Status Badge
+        const badge = document.getElementById('market-status-badge');
+        badge.textContent = historyItem.status_text;
+        badge.className = 'status-text'; // Reset
+
+        if (historyItem.status_text.includes("Green")) badge.classList.add('status-green');
+        else if (historyItem.status_text.includes("Red")) badge.classList.add('status-red');
+        else badge.classList.add('status-neutral');
+
+        // Move Vertical Line on Image (CSS)
+        const chartWrapper = document.getElementById('chart-wrapper');
+        const cursor = document.getElementById('chart-cursor');
+
+        if (chartWrapper && cursor && marketHistory.length > 0) {
+            // Logic to calculate position
+            // The chart image generated by mplfinance has margins.
+            // With tight_layout and figsize(10,8), the plot area is roughly 80-90% of width.
+            // This is a rough approximation. Ideally we'd know the exact pixel bounds.
+            // Let's assume standard margins.
+
+            // Adjust these offsets based on the actual generated image appearance
+            const marginLeft = 0.12; // 12% from left
+            const marginRight = 0.05; // 5% from right
+            const plotWidthPct = 1.0 - marginLeft - marginRight;
+
+            // Calculate percentage position
+            // index 0 = left edge of plot area
+            // index max = right edge of plot area
+            const pct = index / (marketHistory.length - 1);
+            const leftPos = (marginLeft + (pct * plotWidthPct)) * 100;
+
+            cursor.style.left = `${leftPos}%`;
+            cursor.style.display = 'block';
+        }
+
+        // Fetch Daily Data (Strong Stocks)
+        const contentDiv = document.getElementById('strong-stocks-content');
+        contentDiv.innerHTML = '<div class="loading-spinner-small"></div>';
+
+        try {
+            const response = await fetchWithAuth(`/api/daily/${dateKey}`);
+            if (response.ok) {
+                const data = await response.json();
+                renderStrongStocks(data.strong_stocks);
+            } else {
+                // Check if this date is 'today' or close enough?
+                // Or simply show no data
+                contentDiv.innerHTML = '<p style="text-align: center; color: #757575;">No Strong Stocks data available for this date.</p>';
+            }
+        } catch (error) {
+             contentDiv.innerHTML = '<p style="text-align: center; color: #757575;">Error loading data.</p>';
+        }
+    }
+
+    function renderStrongStocks(stocks) {
+        const contentDiv = document.getElementById('strong-stocks-content');
+        if (!stocks || stocks.length === 0) {
+            contentDiv.innerHTML = '<p style="text-align: center;">No Strong Stocks found.</p>';
             return;
         }
-        container.innerHTML = '';
 
-        const chart = LightweightCharts.createChart(container, {
-            width: container.clientWidth,
-            height: 300,
-            layout: {
-                backgroundColor: '#ffffff',
-                textColor: '#333333'
-            },
-            grid: {
-                vertLines: { color: '#e1e1e1' },
-                horzLines: { color: '#e1e1e1' }
-            },
-            crosshair: {
-                mode: LightweightCharts.CrosshairMode.Normal
-            },
-            timeScale: {
-                borderColor: '#cccccc',
-                timeVisible: true,
-                secondsVisible: false
-            },
-            handleScroll: false,
-            handleScale: false
+        // Match the reference image style
+        // Image shows:
+        // Universe: 5,626 Scanned: 5,557 Matches Found: 7 (We might not have these stats readily available unless passed from backend)
+        // Then list of blocks: [ Ticker (RRS: ..., RVol: ..., ADR%: ...) ]
+
+        // I will implement the list of blocks style.
+
+        let html = `
+            <div style="margin-bottom: 10px; font-size: 0.9em; text-align: right; color: #555;">
+                Matches Found: ${stocks.length}
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+        `;
+
+        stocks.forEach(s => {
+            html += `
+                <div style="border: 2px solid black; padding: 10px; font-weight: bold; font-size: 1.1em; background: white;">
+                    <span style="font-size: 1.2em;">${s.ticker}</span>
+                    (RRS: ${s.rrs}, RVol: ${s.rvol}, ADR%: ${s.adr_pct}%)
+                </div>
+            `;
         });
 
-        const candlestickSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
-            upColor: '#26a69a',
-            downColor: '#ef5350',
-            borderDownColor: '#ef5350',
-            borderUpColor: '#26a69a',
-            wickDownColor: '#ef5350',
-            wickUpColor: '#26a69a'
-        });
-
-        const chartData = data.map(item => ({
-            time: (new Date(item.time).getTime() / 1000),
-            open: item.open,
-            high: item.high,
-            low: item.low,
-            close: item.close
-        }));
-
-        candlestickSeries.setData(chartData);
-        chart.timeScale().fitContent();
-
-        new ResizeObserver(entries => {
-            if (entries.length > 0 && entries[0].contentRect.width > 0) {
-                chart.applyOptions({ width: entries[0].contentRect.width });
-            }
-        }).observe(container);
-    }
-
-    function renderMarketOverview(container, marketData, lastUpdated) {
-        if (!container) return;
-        container.innerHTML = '';
-        const card = document.createElement('div');
-        card.className = 'card';
-        let content = '';
-        if (marketData.fear_and_greed) { content += `<div class="market-section"><h3>Fear & Greed Index</h3><div class="fg-container" style="display: flex; justify-content: center; align-items: center; min-height: 400px;"><img src="/fear_and_greed_gauge.png?v=${new Date().getTime()}" alt="Fear and Greed Index Gauge" style="max-width: 100%; height: auto;"></div></div>`; }
-        content += `<div class="market-grid"><div class="market-section"><h3>VIX (4h足)</h3><div class="chart-container" id="vix-chart-container"></div></div><div class="market-section"><h3>米国10年債金利 (4h足)</h3><div class="chart-container" id="t-note-chart-container"></div></div></div>`;
-        if (marketData.ai_commentary) { const dateHtml = formatDateForDisplay(lastUpdated) ? `<p class="ai-date">${formatDateForDisplay(lastUpdated)}</p>` : ''; content += `<div class="market-section"><div class="ai-header"><h3>AI解説</h3>${dateHtml}</div><p>${marketData.ai_commentary.replace(/\n/g, '<br>')}</p></div>`; }
-        card.innerHTML = content;
-        container.appendChild(card);
-        if (marketData.vix && marketData.vix.history) { renderLightweightChart('vix-chart-container', marketData.vix.history, 'VIX'); }
-        if (marketData.t_note_future && marketData.t_note_future.history) { renderLightweightChart('t-note-chart-container', marketData.t_note_future.history, '10y T-Note'); }
-    }
-
-    function renderAllData(data) {
-        console.log("Rendering all data:", data);
-        const lastUpdatedEl = document.getElementById('last-updated');
-        if (lastUpdatedEl && data.last_updated) { lastUpdatedEl.textContent = `Last updated: ${new Date(data.last_updated).toLocaleString('ja-JP')}`; }
-        renderMarketOverview(document.getElementById('market-content'), data.market, data.last_updated);
-    }
-
-    // --- Swipe Navigation ---
-    function initSwipeNavigation() {
-        // Swipe navigation removed/simplified as there's only one tab
+        html += '</div>';
+        contentDiv.innerHTML = html;
     }
 
     // --- Auto Reload Function ---
