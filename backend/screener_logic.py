@@ -98,14 +98,18 @@ class RDTIndicators:
         price_pass = row['Close'] > 5.0
 
         # 6. Trend Structure (Blue Sky / Strong Trend)
-        # Price > SMA50 > SMA100 > SMA200
-        # Check if SMAs are not NaN
-        if pd.isna(row['SMA_50']) or pd.isna(row['SMA_100']) or pd.isna(row['SMA_200']):
+        # Relaxed: Price > SMA50 and SMA50 > SMA200 (Long-term uptrend)
+        # Removed strict SMA100 stacking requirement to allow broader results
+        if pd.isna(row['SMA_50']) or pd.isna(row['SMA_200']):
             trend_pass = False
         else:
             trend_pass = (row['Close'] > row['SMA_50']) and \
-                         (row['SMA_50'] > row['SMA_100']) and \
-                         (row['SMA_100'] > row['SMA_200'])
+                         (row['SMA_50'] > row['SMA_200'])
+
+        # NOTE: Strong Stocks logic often prioritizes RRS over daily RVol/ADR triggers.
+        # Ideally, we want high RRS stocks even if they are resting (low vol) today.
+        # But for 'All_Pass', we usually want the setup to be active.
+        # We will keep the relaxed thresholds from the previous update.
 
         return {
             'RRS_Pass': rrs_pass,
