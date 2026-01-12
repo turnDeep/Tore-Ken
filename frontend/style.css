@@ -5,8 +5,8 @@
     --tab-bg: #FFFFFF;
     --tab-active-bg: #0fb1bd;
     --tab-active-text: #000000;
-    --text-primary: #212121;
-    --text-secondary: #757575;
+    --text-primary: #000000;
+    --text-secondary: #000000;
     --border-color: #e0e0e0;
     --shadow-color: rgba(0, 0, 0, 0.05);
 }
@@ -33,17 +33,9 @@ body {
 }
 
 .header h1 {
-    color: #000000;
+    color: var(--tab-text);
     font-size: 1.8em;
     margin: 0 0 5px 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.header-icon {
-    height: 1em;
-    margin-left: 10px;
 }
 
 .last-updated {
@@ -89,58 +81,64 @@ body {
     to { transform: rotate(360deg); }
 }
 
-/* --- Market Tab Styles --- */
-.market-section {
-    margin-bottom: 30px;
-}
-.market-section h3 {
-    color: #000000;
-    font-size: 1.3em;
-    border-bottom: 2px solid #000000;
-    padding-bottom: 8px;
-    margin-bottom: 15px;
-}
-
-.market-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+/* --- Controls --- */
+.controls-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
     gap: 20px;
+    margin-bottom: 20px;
 }
-.chart-container {
+.slider-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     width: 100%;
-    height: 300px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    position: relative;
+    max-width: 400px;
 }
-
-/* --- Mobile Responsive --- */
-@media (max-width: 768px) {
-    .container {
-        padding: 5px;
-    }
-    .header h1 {
-        font-size: 1.5em;
-    }
-    .card {
-        padding: 15px;
-    }
+input[type=range] {
+    width: 100%;
 }
-
-/* --- Scrollbar --- */
-::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+.control-btn {
+    background-color: var(--tab-active-bg);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
 }
-::-webkit-scrollbar-track {
-    background: var(--background);
+.control-btn:hover {
+    opacity: 0.9;
 }
-::-webkit-scrollbar-thumb {
-    background: #ccc;
+.status-text {
+    font-weight: bold;
+    padding: 4px 8px;
     border-radius: 4px;
 }
-::-webkit-scrollbar-thumb:hover {
-    background: #aaa;
+.status-green { color: green; background-color: #e8f5e9; }
+.status-red { color: red; background-color: #ffebee; }
+.status-neutral { color: gray; }
+
+/* --- Chart Image Wrapper --- */
+#chart-wrapper {
+    position: relative;
+    width: 100%;
+    margin-bottom: 20px;
+}
+#chart-wrapper img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+#chart-cursor {
+    position: absolute;
+    top: 5%; /* Approximate top margin of plot area */
+    bottom: 12%; /* Approximate bottom margin */
+    width: 2px;
+    background-color: rgba(255, 0, 0, 0.7);
+    display: none;
+    pointer-events: none;
+    z-index: 10;
 }
 
 /* --- Authentication Styles --- */
@@ -259,23 +257,22 @@ body {
     }
 }
 
-.notification-btn {
-    background-color: var(--tab-active-bg);
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 5px;
-    cursor: pointer;
-    margin: 10px 0;
-    font-size: 14px;
+/* Notification Toast Keyframes */
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    } to {
+        transform: translateX(0);
+        opacity: 1;
+    }
 }
-
-.notification-btn:hover {
-    opacity: 0.9;
-}
-
-.notification-status {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-left: 10px;
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    } to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
 }

@@ -120,6 +120,143 @@ async function fetchWithAuth(url, options = {}) {
     return response;
 }
 
+// --- NotificationManager (from HanaView) ---
+class NotificationManager {
+    constructor() {
+        this.isSupported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+        this.vapidPublicKey = null;
+    }
+
+    async init() {
+        if (!this.isSupported) {
+            console.log('Push notifications are not supported');
+            return;
+        }
+        console.log('Initializing NotificationManager...');
+        try {
+            const response = await fetch('/api/vapid-public-key');
+            const data = await response.json();
+            this.vapidPublicKey = data.public_key;
+            console.log('VAPID public key obtained');
+        } catch (error) {
+            console.error('Failed to get VAPID public key:', error);
+            return;
+        }
+        const permission = await this.requestPermission();
+        if (permission) {
+            await this.subscribeUser();
+        }
+        navigator.serviceWorker.addEventListener('message', event => {
+            if (event.data.type === 'data-updated' && event.data.data) {
+                console.log('Data updated via push notification');
+                // renderAllData not available here, but we can refresh
+                // or show notification
+                this.showInAppNotification('データが更新されました');
+                location.reload();
+            }
+        });
+    }
+
+    async requestPermission() {
+        const permission = await Notification.requestPermission();
+        console.log('Notification permission:', permission);
+        return permission === 'granted';
+    }
+
+    async subscribeUser() {
+        try {
+            const registration = await navigator.serviceWorker.ready;
+            let subscription = await registration.pushManager.getSubscription();
+            if (!subscription) {
+                const convertedVapidKey = this.urlBase64ToUint8Array(this.vapidPublicKey);
+                subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: convertedVapidKey
+                });
+            }
+            await this.sendSubscriptionToServer(subscription);
+            if ('sync' in registration) {
+                await registration.sync.register('data-sync');
+            }
+        } catch (error) {
+            console.error('Failed to subscribe user:', error);
+        }
+    }
+
+    async sendSubscriptionToServer(subscription) {
+        try {
+            if (typeof AuthManager === 'undefined') {
+                console.error('❌ AuthManager is not defined yet');
+                throw new Error('認証マネージャーが読み込まれていません。');
+            }
+
+            if (!AuthManager.isAuthenticated()) {
+                console.warn('Cannot register push subscription: not authenticated');
+                return;
+            }
+
+            console.log('📤 Sending push subscription to server...');
+
+            const response = await fetchWithAuth('/api/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(subscription)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Server returned ${response.status}: ${errorText}`);
+            }
+
+            const result = await response.json();
+            console.log('✅ Push subscription registered:', result);
+            this.showInAppNotification(`通知が有効になりました (権限: ${result.permission})`);
+        } catch (error) {
+            console.error('❌ Error sending subscription to server:', error);
+            let errorMessage = error.message || '不明なエラー';
+            alert(`⚠️ Push通知の登録に失敗しました:\n${errorMessage}`);
+        }
+    }
+
+    urlBase64ToUint8Array(base64String) {
+        const padding = '='.repeat((4 - base64String.length % 4) % 4);
+        const base64 = (base64String + padding)
+            .replace(/\-/g, '+')
+            .replace(/_/g, '/');
+        const rawData = window.atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+    }
+
+    showInAppNotification(message) {
+        const toast = document.createElement('div');
+        toast.className = 'toast-notification';
+        toast.textContent = message;
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #006B6B;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 10000;
+            animation: slideIn 0.3s ease-out;
+        `;
+        document.body.appendChild(toast);
+        setTimeout(() => {
+            toast.style.animation = 'slideOut 0.3s ease-out';
+            setTimeout(() => {
+                if (toast.parentNode) document.body.removeChild(toast);
+            }, 300);
+        }, 3000);
+    }
+}
+
 // ==========================================
 // DOMContentLoaded以降
 // ==========================================
@@ -190,45 +327,22 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        if (!globalNotificationManager) {
+            globalNotificationManager = new NotificationManager();
+            try {
+                // 少し待機してからNotificationManagerを初期化（iPhone PWA対策）
+                await new Promise(resolve => setTimeout(resolve, 100));
+                await globalNotificationManager.init();
+                console.log('✅ Notifications initialized');
+            } catch (error) {
+                console.error('❌ Notification initialization failed:', error);
+            }
+        }
+
         if (!dashboardContainer.dataset.initialized) {
             console.log("Tore-ken Dashboard Initialized");
             fetchDataAndRender();
-            setupNotifications();
             dashboardContainer.dataset.initialized = 'true';
-        }
-    }
-
-    async function setupNotifications() {
-        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-            console.log('Push notifications not supported');
-            return;
-        }
-
-        try {
-            const registration = await navigator.serviceWorker.register('./sw.js');
-            console.log('Service Worker registered');
-
-            const response = await fetch('/api/vapid-public-key');
-            const data = await response.json();
-            const applicationServerKey = urlBase64ToUint8Array(data.public_key);
-
-            const subscription = await registration.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: applicationServerKey
-            });
-
-            console.log('User is subscribed:', subscription);
-
-            await fetchWithAuth('/api/subscribe', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(subscription)
-            });
-
-        } catch (error) {
-            console.error('Failed to subscribe the user: ', error);
         }
     }
 
