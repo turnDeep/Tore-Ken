@@ -89,8 +89,8 @@ python -m backend.data_fetcher fetch
 `backend/run_job.sh` を使用してcronジョブを設定できます。
 
 ```bash
-# 平日の毎朝 6:00 に更新
-0 6 * * 1-5 /path/to/tore-ken/backend/run_job.sh >> /path/to/tore-ken/logs/cron.log 2>&1
+# 平日の毎朝 6:15 に更新
+15 6 * * 1-5 /path/to/tore-ken/backend/run_job.sh >> /path/to/tore-ken/logs/cron.log 2>&1
 ```
 
 ## 6. ディレクトリ構造
