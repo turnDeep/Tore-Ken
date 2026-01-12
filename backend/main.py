@@ -237,8 +237,8 @@ def get_market_analysis(current_user: str = Depends(get_current_user)):
         return json.load(f)
 
 @app.get("/api/market-chart.png")
-def get_market_chart(current_user: str = Depends(get_current_user)):
-    """Returns the market analysis chart image."""
+def get_market_chart(current_user: str = Depends(get_current_user_for_notification)):
+    """Returns the market analysis chart image. Allows cookie auth for <img> tags."""
     path = os.path.join(DATA_DIR, "market_chart.png")
     if not os.path.exists(path):
          raise HTTPException(status_code=404, detail="Chart image not found.")
