@@ -10,14 +10,14 @@ self.addEventListener('push', event => {
             data = event.data.json();
         } catch (e) {
             data = {
-                title: 'Tore-ken更新',
+                title: 'トレけん更新',
                 body: event.data.text()
             };
         }
     }
 
     const options = {
-        body: data.body || '市況データが更新されました',
+        body: data.body || '米国株銘柄抽出',
         icon: './icons/icon-192x192.png',
         badge: './icons/icon-192x192.png',
         vibrate: [100, 50, 100],
