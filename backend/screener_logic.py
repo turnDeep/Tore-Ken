@@ -7,70 +7,69 @@ class RDTIndicators:
         """
         Calculates all RDT system indicators for a given stock DataFrame.
         """
-        # Ensure df and spy_df are sorted by date
+        # Ensure df is sorted
         df = df.sort_index()
-        spy_df = spy_df.sort_index()
 
-        # Normalize Timezones (remove timezone info for alignment)
+        # Normalize Timezones for df
         if df.index.tz is not None:
             df.index = df.index.tz_localize(None)
-        if spy_df.index.tz is not None:
-            spy_df.index = spy_df.index.tz_localize(None)
 
-        # Align dates
-        common_index = df.index.intersection(spy_df.index)
-        df = df.loc[common_index].copy()
-        spy_df = spy_df.loc[common_index].copy()
+        # --- Calculate Stock-Intrinsic Indicators (Before Alignment) ---
+        # Calculate these on the full available history (1y) to avoid NaN in SMAs
 
-        if df.empty:
-            return df
-
-        # --- Basic Price & MA ---
+        # Basic Price & MA
         df['SMA_10'] = ta.sma(df['Close'], length=10)
         df['SMA_50'] = ta.sma(df['Close'], length=50)
         df['SMA_100'] = ta.sma(df['Close'], length=100)
         df['SMA_200'] = ta.sma(df['Close'], length=200)
 
-        # --- ATR ---
-        # ATR 14
+        # ATR (14)
         df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
 
-        # --- ADR% ---
-        # 20-day Average Daily Range %
-        # Method 1: ((High / Low) - 1) * 100
+        # ADR% (20-day Average Daily Range %)
         daily_range_pct = ((df['High'] / df['Low']) - 1) * 100
         df['ADR_Percent'] = daily_range_pct.rolling(window=20).mean()
 
-        # --- RVol (Fuel) ---
-        # Relative Volume = Volume / 20-day SMA Volume
-        # Note: If running intraday, this needs scaling. Assuming EOD for now.
+        # RVol (Fuel)
         df['Vol_SMA_20'] = ta.sma(df['Volume'], length=20)
         df['RVol'] = df['Volume'] / df['Vol_SMA_20']
 
         # Liquidity Check (10-day Avg Volume)
         df['Vol_SMA_10'] = ta.sma(df['Volume'], length=10)
 
-        # --- RRS (Real Relative Strength) ---
-        # SPY ATR
+        # --- Alignment with Market Data (SPY) ---
+        # Ensure spy_df is sorted and normalized
+        spy_df = spy_df.sort_index()
+        if spy_df.index.tz is not None:
+            spy_df.index = spy_df.index.tz_localize(None)
+
+        # Align dates (intersection)
+        common_index = df.index.intersection(spy_df.index)
+
+        # If no overlap, return empty or handle gracefully
+        if common_index.empty:
+            return pd.DataFrame() # Return empty DF
+
+        df = df.loc[common_index].copy()
+        spy_df = spy_df.loc[common_index].copy()
+
+        if df.empty:
+            return df
+
+        # --- RRS (Real Relative Strength) - Requires Aligned Data ---
         spy_atr = ta.atr(spy_df['High'], spy_df['Low'], spy_df['Close'], length=14)
 
         # Calculate Deltas (Price Change)
-        # Using 1-day change
         delta_stock = df['Close'].diff()
         delta_spy = spy_df['Close'].diff()
 
         # Expected Move = Delta_SPY * (Stock_ATR / SPY_ATR)
-        # Note: Align spy_atr to df index (already done via common_index)
         expected_move = delta_spy * (df['ATR'] / spy_atr)
 
-        # RRS = (Delta_Stock - Expected_Move) / Stock_ATR
-        # This normalizes the excess return by the stock's own volatility
-        # We calculate the daily value first
+        # RRS
         df['RRS_Daily'] = (delta_stock - expected_move) / df['ATR']
 
-        # RRS (Smoothed) for Trend Stability
-        # Use a rolling sum (e.g., 12 days) to match 1OSI-style trend indicators
-        # This prevents daily flickering in the screener
+        # RRS (Smoothed)
         df['RRS'] = df['RRS_Daily'].rolling(window=12).sum().fillna(0)
 
         return df
@@ -85,7 +84,6 @@ class RDTIndicators:
         rrs_pass = row['RRS'] > 1.0
 
         # 2. RVol > 1.5 (Fuel)
-        # Handle division by zero or NaN
         rvol_pass = row['RVol'] > 1.5 if pd.notna(row['RVol']) else False
 
         # 3. ADR% > 4% (Potential)
@@ -99,7 +97,6 @@ class RDTIndicators:
 
         # 6. Trend Structure (Blue Sky / Strong Trend)
         # Price > SMA50 > SMA100 > SMA200
-        # Check if SMAs are not NaN
         if pd.isna(row['SMA_50']) or pd.isna(row['SMA_100']) or pd.isna(row['SMA_200']):
             trend_pass = False
         else:
