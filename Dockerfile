@@ -1,4 +1,5 @@
 # Use the official Python image.
+# Updated to Python 3.12 for pandas_ta compatibility
 FROM python:3.12-slim-bookworm
 WORKDIR /app
 
