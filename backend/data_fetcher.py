@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import datetime
 import logging
 import pandas as pd
@@ -13,19 +14,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Determine paths
-# If running as python -m backend.data_fetcher from root
 PROJECT_ROOT = os.getcwd()
 DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
 STOCK_CSV_PATH = os.path.join(PROJECT_ROOT, 'backend', 'stock.csv')
 
-def send_notifications(daily_data):
+def send_push_notifications(daily_data):
     """
-    Sends push notifications to all subscribers.
+    Sends push notifications to all subscribers with robust error handling and logging.
+    References HanaView202601 implementation.
     """
     logger.info("Starting notification process...")
 
     # Initialize security manager to get keys
-    security_manager.data_dir = DATA_DIR  # Ensure data dir is correct
+    security_manager.data_dir = DATA_DIR
     security_manager.initialize()
 
     subscriptions_file = os.path.join(DATA_DIR, 'push_subscriptions.json')
@@ -52,34 +53,61 @@ def send_notifications(daily_data):
         "title": "Market Data Updated",
         "body": f"Date: {daily_data.get('date')}\nStatus: {daily_data.get('status_text')}\nStrong Stocks: {len(daily_data.get('strong_stocks', []))}",
         "url": "/",
-        "icon": "/icons/icon-192x192.png"
+        "icon": "/icons/icon-192x192.png",
+        "type": "data-update"
     }
 
     json_payload = json.dumps(payload)
 
-    success_count = 0
-    fail_count = 0
+    sent_count = 0
+    failed_subscriptions = []
 
-    # Ideally we should remove invalid subscriptions here, but for simplicity
-    # and to avoid race conditions with the running app, we'll just log errors.
+    for sub_id, subscription in list(subscriptions.items()):
+        permission = subscription.get("permission", "standard")
 
-    for sub_id, sub_info in subscriptions.items():
+        # Create a clean subscription object for webpush (removing 'permission' etc)
+        clean_subscription = {
+            "endpoint": subscription["endpoint"],
+            "keys": subscription["keys"]
+        }
+        if "expirationTime" in subscription and subscription["expirationTime"] is not None:
+            clean_subscription["expirationTime"] = subscription["expirationTime"]
+
         try:
             webpush(
-                subscription_info=sub_info,
+                subscription_info=clean_subscription,
                 data=json_payload,
                 vapid_private_key=security_manager.vapid_private_key,
                 vapid_claims={"sub": security_manager.vapid_subject}
             )
-            success_count += 1
+            sent_count += 1
+            logger.debug(f"Notification sent to {sub_id} ({permission})")
         except WebPushException as ex:
             logger.warning(f"Push failed for {sub_id[:8]}...: {ex}")
-            fail_count += 1
+            # If 410 Gone or 404 Not Found, the subscription is invalid
+            if ex.response and ex.response.status_code in [404, 410]:
+                failed_subscriptions.append(sub_id)
         except Exception as e:
             logger.error(f"Unexpected error sending to {sub_id[:8]}...: {e}")
-            fail_count += 1
 
-    logger.info(f"Notifications sent: {success_count} succeeded, {fail_count} failed.")
+    # Remove invalid subscriptions
+    if failed_subscriptions:
+        for sub_id in failed_subscriptions:
+            if sub_id in subscriptions:
+                del subscriptions[sub_id]
+        try:
+            with open(subscriptions_file, 'w') as f:
+                json.dump(subscriptions, f)
+            logger.info(f"Removed {len(failed_subscriptions)} invalid subscriptions")
+        except Exception as e:
+            logger.error(f"Error saving subscriptions after cleanup: {e}")
+
+    # Log detailed stats matching HanaView style
+    standard_count = sum(1 for s in subscriptions.values() if s.get('permission', 'standard') == 'standard')
+    secret_count = sum(1 for s in subscriptions.values() if s.get('permission') == 'secret')
+    ura_count = sum(1 for s in subscriptions.values() if s.get('permission') == 'ura')
+
+    logger.info(f"Push notifications sent: {sent_count} | Standard: {standard_count}, Secret: {secret_count}, Ura: {ura_count}")
 
 def load_tickers():
     if not os.path.exists(STOCK_CSV_PATH):
@@ -105,7 +133,7 @@ def load_tickers():
         logger.error(f"Error loading tickers: {e}")
         return []
 
-def main():
+def fetch_and_notify():
     os.makedirs(DATA_DIR, exist_ok=True)
 
     logger.info("Generating Market Analysis Data (6 months)...")
@@ -166,7 +194,18 @@ def main():
         json.dump(daily_data, f)
 
     # Send notifications
-    send_notifications(daily_data)
+    send_push_notifications(daily_data)
 
 if __name__ == "__main__":
-    main()
+    # Handle command line arguments to support 'fetch' and 'generate' styles
+    # In this simplified repo, we run the full process for either command to ensure data freshness and notification.
+    if len(sys.argv) > 1:
+        command = sys.argv[1]
+        if command in ['fetch', 'generate']:
+            logger.info(f"Executing command: {command}")
+            fetch_and_notify()
+        else:
+            logger.warning(f"Unknown command: {command}. executing default fetch_and_notify.")
+            fetch_and_notify()
+    else:
+        fetch_and_notify()
