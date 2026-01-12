@@ -87,6 +87,22 @@ class AuthManager {
     }
 }
 
+// --- Helper for VAPID Key ---
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
 // --- Authenticated Fetch Wrapper ---
 async function fetchWithAuth(url, options = {}) {
     const authHeaders = AuthManager.getAuthHeaders();
@@ -177,7 +193,42 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!dashboardContainer.dataset.initialized) {
             console.log("Tore-ken Dashboard Initialized");
             fetchDataAndRender();
+            setupNotifications();
             dashboardContainer.dataset.initialized = 'true';
+        }
+    }
+
+    async function setupNotifications() {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+            console.log('Push notifications not supported');
+            return;
+        }
+
+        try {
+            const registration = await navigator.serviceWorker.register('./sw.js');
+            console.log('Service Worker registered');
+
+            const response = await fetch('/api/vapid-public-key');
+            const data = await response.json();
+            const applicationServerKey = urlBase64ToUint8Array(data.public_key);
+
+            const subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: applicationServerKey
+            });
+
+            console.log('User is subscribed:', subscription);
+
+            await fetchWithAuth('/api/subscribe', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(subscription)
+            });
+
+        } catch (error) {
+            console.error('Failed to subscribe the user: ', error);
         }
     }
 
