@@ -6,6 +6,7 @@ import traceback
 import logging
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, FastAPI, HTTPException, Header, status, Response, Request, Cookie
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from jose import JWTError, jwt
@@ -234,6 +235,14 @@ def get_market_analysis(current_user: str = Depends(get_current_user)):
          raise HTTPException(status_code=404, detail="Market analysis data not found.")
     with open(path, "r", encoding='utf-8') as f:
         return json.load(f)
+
+@app.get("/api/market-chart.png")
+def get_market_chart(current_user: str = Depends(get_current_user)):
+    """Returns the market analysis chart image."""
+    path = os.path.join(DATA_DIR, "market_chart.png")
+    if not os.path.exists(path):
+         raise HTTPException(status_code=404, detail="Chart image not found.")
+    return FileResponse(path)
 
 @app.get("/api/daily/{date_key}")
 def get_daily_data(date_key: str, current_user: str = Depends(get_current_user)):
