@@ -10,7 +10,7 @@ self.addEventListener('push', event => {
             data = event.data.json();
         } catch (e) {
             data = {
-                title: 'HanaView更新',
+                title: 'Tore-ken更新',
                 body: event.data.text()
             };
         }
@@ -29,7 +29,7 @@ self.addEventListener('push', event => {
 
     event.waitUntil(
         self.registration.showNotification(
-            data.title || 'HanaView更新通知',
+            data.title || 'Tore-ken更新通知',
             options
         )
     );
