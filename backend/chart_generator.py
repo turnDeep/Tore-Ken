@@ -101,9 +101,19 @@ def generate_market_chart(df, output_path):
             title="", # No title inside the image to save space, handled by HTML
             returnfig=True,
             figsize=(10, 8), # Fixed size for web
-            tight_layout=True,
-            scale_padding={'left': 0.1, 'top': 0.1, 'right': 1.0, 'bottom': 1.0} # Attempt to control padding? No, scale_padding is internal.
+            tight_layout=False,
         )
+
+        # Enforce fixed margins for frontend alignment
+        # Left: 0.05 (5%), Right: 0.88 (88%) -> Right Margin: 0.12 (12%)
+        left_margin = 0.05
+        right_boundary = 0.88
+        plot_width = right_boundary - left_margin
+
+        for ax in axlist:
+            pos = ax.get_position()
+            # Preserve vertical position and height, override horizontal
+            ax.set_position([left_margin, pos.y0, plot_width, pos.height])
 
         # Add reference lines manually
         if len(axlist) > 4: # 0=Main, 2=TSV, 4=Stoch (indices depend on mpf internals, usually odd are legends/secondary)

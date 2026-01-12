@@ -358,14 +358,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // Let's assume standard margins.
 
             // Adjust these offsets based on the actual generated image appearance
-            const marginLeft = 0.12; // 12% from left
-            const marginRight = 0.05; // 5% from right
+            const marginLeft = 0.05; // 5% from left
+            const marginRight = 0.12; // 12% from right
             const plotWidthPct = 1.0 - marginLeft - marginRight;
 
             // Calculate percentage position
             // index 0 = left edge of plot area
             // index max = right edge of plot area
-            const pct = index / (marketHistory.length - 1);
+            const count = marketHistory.length;
+            const pct = (index + 0.5) / count;
             const leftPos = (marginLeft + (pct * plotWidthPct)) * 100;
 
             cursor.style.left = `${leftPos}%`;
