@@ -507,7 +507,9 @@ document.addEventListener('DOMContentLoaded', () => {
         badge.textContent = historyItem.status_text;
         badge.className = 'status-text'; // Reset
 
-        if (historyItem.status_text.includes("Green")) badge.classList.add('status-green');
+        if (historyItem.status_text.includes("Red to")) badge.classList.add('status-green');
+        else if (historyItem.status_text.includes("Green to")) badge.classList.add('status-red');
+        else if (historyItem.status_text.includes("Green")) badge.classList.add('status-green');
         else if (historyItem.status_text.includes("Red")) badge.classList.add('status-red');
         else badge.classList.add('status-neutral');
 
@@ -580,8 +582,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         stocks.forEach(s => {
             html += `
-                <div style="border: 2px solid black; padding: 10px; font-weight: bold; font-size: 1.1em; background: white;">
-                    <span style="font-size: 1.2em;">${s.ticker}</span>
+                <div style="border: 2px solid black; padding: 10px; font-weight: bold; font-size: 0.7em; background: white;">
+                    <span style="font-size: 1.43em;">${s.ticker}</span>
                     (RRS: ${s.rrs}, RVol: ${s.rvol}, ADR%: ${s.adr_pct}%)
                 </div>
             `;
