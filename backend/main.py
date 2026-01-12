@@ -41,7 +41,7 @@ async def startup_event():
 
     # 設定の確認表示
     print("\n" + "=" * 60)
-    print("HanaView Security Configuration Initialized")
+    print("Tore-ken Security Configuration Initialized")
     print("=" * 60)
     print(f"JWT Secret: ***{security_manager.jwt_secret[-8:]}")
     print(f"VAPID Public Key: {security_manager.vapid_public_key[:20]}...")

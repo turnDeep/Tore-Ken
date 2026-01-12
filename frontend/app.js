@@ -3,7 +3,7 @@
 // ==========================================
 
 // --- IndexedDB & Auth Config ---
-const DB_NAME = 'HanaViewDB';
+const DB_NAME = 'ToreKenDB';
 const DB_VERSION = 1;
 const TOKEN_STORE_NAME = 'auth-tokens';
 
@@ -109,7 +109,7 @@ async function fetchWithAuth(url, options = {}) {
 // ==========================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("HanaView App Initializing...");
+    console.log("Tore-ken App Initializing...");
 
     // --- DOM Element References ---
     const authContainer = document.getElementById('auth-container');
@@ -175,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (!dashboardContainer.dataset.initialized) {
-            console.log("HanaView Dashboard Initialized");
+            console.log("Tore-ken Dashboard Initialized");
             fetchDataAndRender();
             dashboardContainer.dataset.initialized = 'true';
         }

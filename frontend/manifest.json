@@ -1,6 +1,6 @@
 {
-  "name": "HanaView Market Dashboard",
-  "short_name": "HanaView",
+  "name": "Tore-ken Market Dashboard",
+  "short_name": "Tore-ken",
   "description": "市況ダッシュボード",
   "start_url": "./",
   "display": "standalone",

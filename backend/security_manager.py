@@ -24,7 +24,7 @@ class SecurityManager:
         env_jwt = os.getenv("JWT_SECRET_KEY")
         env_vapid_public = os.getenv("VAPID_PUBLIC_KEY")
         env_vapid_private = os.getenv("VAPID_PRIVATE_KEY")
-        env_vapid_subject = os.getenv("VAPID_SUBJECT", "mailto:admin@hanaview.local")
+        env_vapid_subject = os.getenv("VAPID_SUBJECT", "mailto:admin@toreken.local")
 
         # すべてが環境変数にある場合
         if env_jwt and env_vapid_public and env_vapid_private:

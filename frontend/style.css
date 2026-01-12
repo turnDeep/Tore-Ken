@@ -548,37 +548,6 @@ body {
     margin: 4px 0;
 }
 
-/* --- AI Commentary & Column Styles --- */
-.ai-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 2px solid #000000;
-    padding-bottom: 8px;
-    margin-bottom: 15px;
-}
-
-.ai-header h3 {
-    color: #000000;
-    font-size: 1.3em;
-    margin: 0;
-    border-bottom: none;
-    padding-bottom: 0;
-}
-
-.ai-date {
-    font-size: 0.9em;
-    color: var(--text-secondary);
-    margin: 0;
-    white-space: nowrap;
-    padding-left: 15px;
-}
-
-/* --- Column Tab Styles --- */
-/* Styles for .column-container h3 and .column-date are now handled by .ai-header */
-.column-content {
-    line-height: 1.7;
-}
 
 /* --- Mobile Responsive --- */
 @media (max-width: 768px) {
@@ -780,8 +749,8 @@ body {
     }
 }
 
-/* HWB 200MAタブスタイル */
-.hwb-controls {
+/* RDT 200MAタブスタイル */
+.rdt-controls {
     display: flex;
     align-items: center;
     gap: 15px;
@@ -792,7 +761,7 @@ body {
     box-shadow: 0 2px 8px var(--shadow-color);
 }
 
-.hwb-ticker-input {
+.rdt-ticker-input {
     flex-grow: 1;
     padding: 10px;
     border: 1px solid var(--border-color);
@@ -800,7 +769,7 @@ body {
     font-size: 1em;
 }
 
-.hwb-action-btn {
+.rdt-action-btn {
     padding: 10px 20px;
     background-color: var(--tab-active-bg);
     color: white;
@@ -812,26 +781,26 @@ body {
     transition: all 0.3s;
 }
 
-.hwb-action-btn:hover {
+.rdt-action-btn:hover {
     background-color: #0d8a93;
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 107, 107, 0.3);
 }
 
-.hwb-action-btn:disabled {
+.rdt-action-btn:disabled {
     background-color: #ccc;
     cursor: not-allowed;
     transform: none;
 }
 
-.hwb-status-info {
+.rdt-status-info {
     flex: 1;
     text-align: right;
     color: var(--text-secondary);
     font-size: 0.9em;
 }
 
-.hwb-summary {
+.rdt-summary {
     background-color: var(--card-background);
     border-radius: 8px;
     padding: 20px;
@@ -839,7 +808,7 @@ body {
     box-shadow: 0 4px 12px var(--shadow-color);
 }
 
-.hwb-summary h2 {
+.rdt-summary h2 {
     color: #000000;
     font-size: 1.6em;
     margin-bottom: 15px;
@@ -847,14 +816,14 @@ body {
     padding-bottom: 10px;
 }
 
-.hwb-summary-grid {
+.rdt-summary-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 15px;
     margin-top: 20px;
 }
 
-.hwb-summary-grid > div {
+.rdt-summary-grid > div {
     text-align: center;
     padding: 15px;
     background-color: #f8f9fa;
@@ -863,19 +832,19 @@ body {
     transition: all 0.3s ease;
 }
 
-.hwb-summary-grid > div:hover {
+.rdt-summary-grid > div:hover {
     background-color: #e9ecef;
     transform: translateY(-2px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
-.hwb-summary-grid > div.active {
+.rdt-summary-grid > div.active {
     background-color: #d1ecf1;
     border: 2px solid #0fb1bd;
     font-weight: bold;
 }
 
-.hwb-summary-grid h3 {
+.rdt-summary-grid h3 {
     margin: 0 0 10px 0;
     font-size: 0.9em;
     color: var(--text-primary);
@@ -888,7 +857,7 @@ body {
     margin: 0;
 }
 
-.hwb-search-results {
+.rdt-search-results {
     /* 検索結果用のスタイル */
 }
 
@@ -900,11 +869,11 @@ body {
     margin: 15px 0;
 }
 
-.hwb-charts-section {
+.rdt-charts-section {
     margin-top: 30px;
 }
 
-.hwb-charts-section h2 {
+.rdt-charts-section h2 {
     color: #000000;
     font-size: 1.4em;
     margin-bottom: 20px;
@@ -912,13 +881,13 @@ body {
     border-bottom: 2px solid #000000;
 }
 
-.hwb-chart-grid {
+.rdt-chart-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
     gap: 20px;
 }
 
-.hwb-chart-card {
+.rdt-chart-card {
     background-color: var(--card-background);
     border-radius: 8px;
     padding: 15px;
@@ -926,12 +895,12 @@ body {
     transition: transform 0.3s;
 }
 
-.hwb-chart-card:hover {
+.rdt-chart-card:hover {
     transform: translateY(-5px);
     box-shadow: 0 8px 20px var(--shadow-color);
 }
 
-.hwb-chart-header {
+.rdt-chart-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -940,7 +909,7 @@ body {
     border-bottom: 1px solid var(--border-color);
 }
 
-.hwb-chart-symbol {
+.rdt-chart-symbol {
     font-size: 1.3em;
     font-weight: bold;
     color: var(--text-primary);
@@ -948,7 +917,7 @@ body {
 
 /* スコアバッジ関連のスタイルは削除されました */
 
-.hwb-chart-info {
+.rdt-chart-info {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -957,40 +926,40 @@ body {
     color: var(--text-secondary);
 }
 
-.hwb-chart-info span {
+.rdt-chart-info span {
     display: flex;
     align-items: center;
     gap: 5px;
 }
 
-.hwb-chart-container {
+.rdt-chart-container {
     width: 100%;
     height: 300px;
     margin-top: 10px;
 }
 
 @media (max-width: 768px) {
-    .hwb-chart-grid {
+    .rdt-chart-grid {
         grid-template-columns: 1fr;
     }
 
-    .hwb-controls {
+    .rdt-controls {
         flex-direction: column;
         align-items: stretch;
     }
 
-    .hwb-status-info {
+    .rdt-status-info {
         text-align: center;
         margin-top: 10px;
     }
 }
 
-/* HWB Symbol List Styles */
-.hwb-symbol-section {
+/* RDT Symbol List Styles */
+.rdt-symbol-section {
     margin-top: 30px;
 }
 
-.hwb-symbol-section h2 {
+.rdt-symbol-section h2 {
     color: #000000;
     font-size: 1.4em;
     margin-bottom: 20px;
@@ -998,13 +967,13 @@ body {
     border-bottom: 2px solid #000000;
 }
 
-.hwb-symbol-list {
+.rdt-symbol-list {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 12px;
 }
 
-.hwb-symbol-item {
+.rdt-symbol-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1015,19 +984,19 @@ body {
     transition: transform 0.2s, box-shadow 0.2s;
 }
 
-.hwb-symbol-item:hover {
+.rdt-symbol-item:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px var(--shadow-color);
 }
 
-.hwb-symbol-name {
+.rdt-symbol-name {
     font-size: 1.2em;
     font-weight: bold;
     color: var(--text-primary);
     flex: 0 0 100px;
 }
 
-.hwb-symbol-badge {
+.rdt-symbol-badge {
     padding: 6px 14px;
     border-radius: 15px;
     font-weight: 600;
@@ -1063,7 +1032,7 @@ body {
     color: white;
 }
 
-.hwb-symbol-date {
+.rdt-symbol-date {
     font-size: 0.9em;
     color: var(--text-secondary);
     flex: 1;
@@ -1071,27 +1040,27 @@ body {
 }
 
 @media (max-width: 768px) {
-    .hwb-symbol-item {
+    .rdt-symbol-item {
         flex-direction: column;
         align-items: flex-start;
         gap: 8px;
     }
 
-    .hwb-symbol-name {
+    .rdt-symbol-name {
         flex: none;
     }
 
-    .hwb-symbol-badge {
+    .rdt-symbol-badge {
         margin: 0;
     }
 
-    .hwb-symbol-date {
+    .rdt-symbol-date {
         text-align: left;
     }
 }
 
 /* RS Rating バッジスタイル */
-.hwb-rs-badge {
+.rdt-rs-badge {
     padding: 4px 10px;
     border-radius: 12px;
     font-weight: 600;
@@ -1121,7 +1090,7 @@ body {
 }
 
 /* 出来高バッジのスタイル */
-.hwb-volume-badge {
+.rdt-volume-badge {
     padding: 4px 10px;
     border-radius: 12px;
     font-weight: 600;
@@ -1151,12 +1120,12 @@ body {
 
 /* モバイル対応 */
 @media (max-width: 768px) {
-    .hwb-rs-badge {
+    .rdt-rs-badge {
         padding: 3px 8px;
         font-size: 0.75em;
     }
 
-    .hwb-volume-badge {
+    .rdt-volume-badge {
         padding: 3px 8px;
         font-size: 0.75em;
         border-width: 1.5px;
