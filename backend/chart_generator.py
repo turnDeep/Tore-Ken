@@ -42,6 +42,9 @@ def generate_market_chart(df, output_path):
     if 'market_status' in df.columns:
         bull_mask = df['market_status'] == 'Green'
         bear_mask = df['market_status'] == 'Red'
+    elif 'Bullish_Phase' in df.columns and 'Bearish_Phase' in df.columns:
+        bull_mask = df['Bullish_Phase'].astype(bool)
+        bear_mask = df['Bearish_Phase'].astype(bool)
     else:
         # Fallback if not calculated
         bull_mask = np.zeros(len(df), dtype=bool)
@@ -67,11 +70,11 @@ def generate_market_chart(df, output_path):
 
     # Bullish Zone
     apds.append(mpf.make_addplot(y1_series, panel=0, color='g', alpha=0.0, secondary_y=False,
-                     fill_between=dict(y1=y_max, y2=y_min, where=bull_mask, color='skyblue', alpha=0.15)))
+                     fill_between=dict(y1=y_max, y2=y_min, where=bull_mask, color='green', alpha=0.1)))
 
     # Bearish Zone
     apds.append(mpf.make_addplot(y1_series, panel=0, color='r', alpha=0.0, secondary_y=False,
-                     fill_between=dict(y1=y_max, y2=y_min, where=bear_mask, color='lightcoral', alpha=0.15)))
+                     fill_between=dict(y1=y_max, y2=y_min, where=bear_mask, color='red', alpha=0.1)))
 
     # Style
     mc = mpf.make_marketcolors(up='green', down='red', inherit=True)
