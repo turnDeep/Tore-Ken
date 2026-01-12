@@ -84,15 +84,15 @@ class RDTIndicators:
         # 1. RRS > 1.0 (Most Important)
         rrs_pass = row['RRS'] > 1.0
 
-        # 2. RVol > 1.5 (Fuel)
+        # 2. RVol > 1.0 (Fuel) - Relaxed from 1.5
         # Handle division by zero or NaN
-        rvol_pass = row['RVol'] > 1.5 if pd.notna(row['RVol']) else False
+        rvol_pass = row['RVol'] > 1.0 if pd.notna(row['RVol']) else False
 
-        # 3. ADR% > 4% (Potential)
-        adr_pass = row['ADR_Percent'] > 4.0 if pd.notna(row['ADR_Percent']) else False
+        # 3. ADR% > 2.5% (Potential) - Relaxed from 4.0
+        adr_pass = row['ADR_Percent'] > 2.5 if pd.notna(row['ADR_Percent']) else False
 
-        # 4. Liquidity: Avg Vol (10) > 1,000,000
-        liq_pass = row['Vol_SMA_10'] > 1_000_000 if pd.notna(row['Vol_SMA_10']) else False
+        # 4. Liquidity: Avg Vol (10) > 500,000 - Relaxed from 1,000,000
+        liq_pass = row['Vol_SMA_10'] > 500_000 if pd.notna(row['Vol_SMA_10']) else False
 
         # 5. Price > $5
         price_pass = row['Close'] > 5.0
