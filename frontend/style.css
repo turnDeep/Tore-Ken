@@ -33,8 +33,8 @@ body {
 }
 
 .header h1 {
-    color: var(--tab-text);
-    font-size: 1.8em;
+    color: #000000;
+    font-size: 3.0em;
     margin: 0 0 5px 0;
 }
 
