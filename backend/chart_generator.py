@@ -42,6 +42,9 @@ def generate_market_chart(df, output_path):
     if 'market_status' in df.columns:
         bull_mask = df['market_status'] == 'Green'
         bear_mask = df['market_status'] == 'Red'
+    elif 'Bullish_Phase' in df.columns and 'Bearish_Phase' in df.columns:
+        bull_mask = df['Bullish_Phase'].astype(bool)
+        bear_mask = df['Bearish_Phase'].astype(bool)
     else:
         # Fallback if not calculated
         bull_mask = np.zeros(len(df), dtype=bool)
