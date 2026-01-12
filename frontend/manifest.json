@@ -1,7 +1,7 @@
 {
-  "name": "Tore-ken Market Dashboard",
-  "short_name": "Tore-ken",
-  "description": "市況ダッシュボード",
+  "name": "Tore-ken",
+  "short_name": "トレけん",
+  "description": "アルゴリズムトレード",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#E6F3F7",
