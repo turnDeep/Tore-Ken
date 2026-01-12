@@ -3,8 +3,10 @@ import os
 import datetime
 import logging
 import pandas as pd
+from pywebpush import webpush, WebPushException
 from backend.rdt_logic import get_market_analysis_data, run_screener_for_tickers
 from backend.chart_generator import generate_market_chart
+from backend.security_manager import security_manager
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -15,6 +17,69 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = os.getcwd()
 DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
 STOCK_CSV_PATH = os.path.join(PROJECT_ROOT, 'backend', 'stock.csv')
+
+def send_notifications(daily_data):
+    """
+    Sends push notifications to all subscribers.
+    """
+    logger.info("Starting notification process...")
+
+    # Initialize security manager to get keys
+    security_manager.data_dir = DATA_DIR  # Ensure data dir is correct
+    security_manager.initialize()
+
+    subscriptions_file = os.path.join(DATA_DIR, 'push_subscriptions.json')
+    if not os.path.exists(subscriptions_file):
+        logger.info("No subscriptions file found. Skipping notifications.")
+        return
+
+    try:
+        with open(subscriptions_file, 'r') as f:
+            subscriptions = json.load(f)
+    except Exception as e:
+        logger.error(f"Error reading subscriptions file: {e}")
+        return
+
+    if not subscriptions:
+        logger.info("No subscriptions found.")
+        return
+
+    logger.info(f"Found {len(subscriptions)} subscriptions. Sending notifications...")
+
+    # Prepare notification payload
+    # Note: The format must match what the service worker expects
+    payload = {
+        "title": "Market Data Updated",
+        "body": f"Date: {daily_data.get('date')}\nStatus: {daily_data.get('status_text')}\nStrong Stocks: {len(daily_data.get('strong_stocks', []))}",
+        "url": "/",
+        "icon": "/icons/icon-192x192.png"
+    }
+
+    json_payload = json.dumps(payload)
+
+    success_count = 0
+    fail_count = 0
+
+    # Ideally we should remove invalid subscriptions here, but for simplicity
+    # and to avoid race conditions with the running app, we'll just log errors.
+
+    for sub_id, sub_info in subscriptions.items():
+        try:
+            webpush(
+                subscription_info=sub_info,
+                data=json_payload,
+                vapid_private_key=security_manager.vapid_private_key,
+                vapid_claims={"sub": security_manager.vapid_subject}
+            )
+            success_count += 1
+        except WebPushException as ex:
+            logger.warning(f"Push failed for {sub_id[:8]}...: {ex}")
+            fail_count += 1
+        except Exception as e:
+            logger.error(f"Unexpected error sending to {sub_id[:8]}...: {e}")
+            fail_count += 1
+
+    logger.info(f"Notifications sent: {success_count} succeeded, {fail_count} failed.")
 
 def load_tickers():
     if not os.path.exists(STOCK_CSV_PATH):
@@ -99,6 +164,9 @@ def main():
     latest_filepath = os.path.join(DATA_DIR, "latest.json")
     with open(latest_filepath, "w") as f:
         json.dump(daily_data, f)
+
+    # Send notifications
+    send_notifications(daily_data)
 
 if __name__ == "__main__":
     main()
