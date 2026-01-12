@@ -1,4 +1,4 @@
-// frontend/sw.js
+// frontend/sw.js - 通知受信部分のみに集中
 
 // Push通知受信
 self.addEventListener('push', event => {
