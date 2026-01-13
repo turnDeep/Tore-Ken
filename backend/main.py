@@ -16,6 +16,7 @@ from typing import Dict, Any, Optional
 
 # Import security manager
 from .security_manager import security_manager
+from .ws_manager import ws_manager
 import asyncio
 
 # Setup logging
@@ -48,6 +49,13 @@ async def startup_event():
     print(f"VAPID Public Key: {security_manager.vapid_public_key[:20]}...")
     print(f"VAPID Subject: {security_manager.vapid_subject}")
     print("=" * 60 + "\n")
+
+    # Start WebSocket Manager
+    await ws_manager.start()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await ws_manager.stop()
 
 # --- Configuration ---
 AUTH_PIN = os.getenv("AUTH_PIN", "123456")
@@ -373,6 +381,11 @@ def debug_subscriptions(current_user: str = Depends(get_current_user)):
             for sub_id, data in subs.items()
         }
     }
+
+@app.get("/api/realtime-rvol")
+def get_realtime_rvol(current_user: str = Depends(get_current_user)):
+    """Returns current RVol data."""
+    return ws_manager.get_all_rvols()
 
 # Mount the frontend directory to serve static files
 # This must come AFTER all API routes
