@@ -8,6 +8,7 @@ from pywebpush import webpush, WebPushException
 from backend.rdt_logic import get_market_analysis_data, run_screener_for_tickers
 from backend.chart_generator import generate_market_chart
 from backend.security_manager import security_manager
+from backend.get_tickers import update_stock_csv_from_fmp
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -110,6 +111,9 @@ def send_push_notifications(daily_data):
     logger.info(f"Push notifications sent: {sent_count} | Standard: {standard_count}, Secret: {secret_count}, Ura: {ura_count}")
 
 def load_tickers():
+    # Attempt to update tickers from FMP before loading
+    update_stock_csv_from_fmp(STOCK_CSV_PATH)
+
     if not os.path.exists(STOCK_CSV_PATH):
         logger.error(f"Stock CSV not found at {STOCK_CSV_PATH}")
         return []
