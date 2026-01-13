@@ -52,7 +52,7 @@ def send_push_notifications(daily_data):
     # Note: The format must match what the service worker expects
     payload = {
         "title": "Market Data Updated",
-        "body": f"Date: {daily_data.get('date')}\nStatus: {daily_data.get('status_text')}\nStrong Stocks: {len(daily_data.get('strong_stocks', []))}",
+        "body": f"Date: {daily_data.get('date')}\nStatus: {daily_data.get('status_text')} / Stocks: {len(daily_data.get('strong_stocks', []))}",
         "url": "/",
         "icon": "/icons/icon-192x192.png",
         "type": "data-update"

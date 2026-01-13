@@ -14,16 +14,6 @@ from backend.rvol_logic import MarketSchedule
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("cron_scheduler")
 
-def is_dst(dt_jst):
-    """
-    Determines if the corresponding US Eastern time is in DST.
-    """
-    # Convert JST time to US/Eastern
-    dt_et = dt_jst.astimezone(pytz.timezone('US/Eastern'))
-    return dt_et.dst() != list(filter(None, [dt_et.tzinfo.dst(dt_et)]))[0] if dt_et.tzinfo else False
-    # Actually simpler: pytz timezone objects have .dst() method on datetime
-    return dt_et.dst().total_seconds() != 0
-
 def run_fetch_job():
     logger.info("Triggering fetch job...")
     try:

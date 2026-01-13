@@ -71,9 +71,7 @@ class WebSocketManager:
         if self.running:
             return
 
-        self.load_tickers()
-        await self.initialize_analyzers()
-
+        # Don't block startup with initialization. Let _run handle it.
         self.running = True
         self.task = asyncio.create_task(self._run())
         logger.info("WebSocketManager started.")
@@ -101,27 +99,33 @@ class WebSocketManager:
 
     async def _run(self):
         """Main loop."""
+        # Initial load attempt
+        self.load_tickers()
+        await self.initialize_analyzers()
+
         while self.running:
             # Check market hours
-            # For testing/demo, we might want to bypass this check or have a "force" mode.
-            # But per requirements: "When venue starts..."
-            # However, during development, I need to verify it works even if market is closed (maybe using replay or just connecting).
-            # yfinance WebSocket usually allows connection 24/7 but only sends data when there is data (e.g. after hours or crypto).
-            # The tickers are stocks.
-
-            # Force run if env var DEBUG_WS is set, otherwise check schedule
             force_run = os.getenv("DEBUG_WS", "false").lower() == "true"
             is_open = MarketSchedule.is_market_open()
 
             if is_open or force_run:
                 logger.info(f"Market Open: {is_open} (Force: {force_run}). Connecting to WebSocket...")
                 try:
+                    # Re-load tickers if needed (e.g., if we were waiting)
+                    # Ideally, check if tickers have changed, but reloading daily when market opens is safe.
+                    # However, if we are already in the loop, we might want to ensure analyzers are ready.
+                    if not self.analyzers:
+                         self.load_tickers()
+                         await self.initialize_analyzers()
+
                     # yfinance WebSocket wrapper
-                    # Note: AsyncWebSocket is available in newer versions
                     async with yf.AsyncWebSocket() as ws:
                         if not self.tickers:
                              logger.warning("No tickers to subscribe.")
                              await asyncio.sleep(60)
+                             # Retry loading in case file was created
+                             self.load_tickers()
+                             await self.initialize_analyzers()
                              continue
 
                         await ws.subscribe(self.tickers)
@@ -133,8 +137,16 @@ class WebSocketManager:
                     logger.error(f"WebSocket error: {e}")
                     await asyncio.sleep(10) # Backoff
             else:
-                logger.info("Market Closed. Waiting...")
-                await asyncio.sleep(300) # Check every 5 mins
+                logger.info("Market Closed. Waiting and refreshing data...")
+                # When market is closed, we should refresh data periodically
+                # so that when it opens, we have the latest "Strong Stocks" from the cron job.
+                await asyncio.sleep(300) # Wait 5 mins
+
+                # Refresh tickers and analyzers
+                self.load_tickers()
+                # Run initialization in background or await it?
+                # Since market is closed, awaiting is fine.
+                await self.initialize_analyzers()
 
     def get_all_rvols(self) -> Dict[str, float]:
         """Returns current RVol for all monitored tickers."""
