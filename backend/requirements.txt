@@ -34,4 +34,3 @@ platformdirs>=4.2.0
 protobuf>=4.25.0
 websockets>=12.0
 pandas_ta
-curl-cffi
