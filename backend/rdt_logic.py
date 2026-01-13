@@ -220,7 +220,8 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None):
                             "ticker": ticker,
                             "rrs": round(last_row['RRS'], 2),
                             "rvol": round(last_row['RVol'], 2),
-                            "adr_pct": round(last_row['ADR_Percent'], 2)
+                            "adr_pct": round(last_row['ADR_Percent'], 2),
+                            "atr_multiple": round(last_row['ATR_Multiple_50MA'], 2)
                         }
 
                         # Generate Chart

@@ -72,6 +72,20 @@ class RDTIndicators:
         # RRS (Smoothed)
         df['RRS'] = df['RRS_Daily'].rolling(window=12).sum().fillna(0)
 
+        # --- ATR% Multiple from 50-MA ---
+        # 1. ATR % (ATR / Price)
+        atr_pct = df['ATR'] / df['Close']
+
+        # 2. % Gain From 50-MA
+        pct_from_50ma = (df['Close'] - df['SMA_50']) / df['SMA_50']
+
+        # 3. ATR Multiple (Avoid division by zero)
+        df['ATR_Multiple_50MA'] = pct_from_50ma / atr_pct
+        # Handle cases where ATR is 0 or NaN
+        df['ATR_Multiple_50MA'] = df['ATR_Multiple_50MA'].fillna(0.0)
+        # Handle Infinite values (division by zero results)
+        df['ATR_Multiple_50MA'] = df['ATR_Multiple_50MA'].replace([float('inf'), float('-inf')], 0.0)
+
         return df
 
     @staticmethod

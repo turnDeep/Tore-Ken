@@ -590,23 +590,26 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = document.createElement('div');
             item.style.cssText = 'border: 2px solid black; padding: 10px; font-weight: bold; font-size: 0.7em; background: white;';
 
-            // Flex row for button-like behavior on ticker
-            const row = document.createElement('div');
-            row.style.display = 'flex';
-            row.style.alignItems = 'baseline';
-
-            // Ticker Button
+            // Ticker Line (Line 1)
+            const line1 = document.createElement('div');
             const tickerSpan = document.createElement('span');
             tickerSpan.textContent = s.ticker;
-            tickerSpan.style.cssText = 'font-size: 1.43em; cursor: pointer; text-decoration: underline; margin-right: 5px; color: #000;';
+            tickerSpan.style.cssText = 'font-size: 1.43em; cursor: pointer; text-decoration: underline; color: #000;';
+            line1.appendChild(tickerSpan);
 
-            // Info Text
-            const infoSpan = document.createElement('span');
-            infoSpan.textContent = `(RRS: ${s.rrs}, RVol: ${s.rvol}, ADR%: ${s.adr_pct}%)`;
+            // Indicators Line (Line 2)
+            const line2 = document.createElement('div');
+            line2.textContent = `RRS: ${s.rrs}, RVol: ${s.rvol}, ADR%: ${s.adr_pct}%`;
+            line2.style.fontSize = '0.9em';
 
-            row.appendChild(tickerSpan);
-            row.appendChild(infoSpan);
-            item.appendChild(row);
+            // ATR% Multiple Line (Line 3)
+            const line3 = document.createElement('div');
+            line3.textContent = `ATR% Multiple from 50-MA: ${s.atr_multiple !== undefined ? s.atr_multiple : 'N/A'}`;
+            line3.style.fontSize = '0.9em';
+
+            item.appendChild(line1);
+            item.appendChild(line2);
+            item.appendChild(line3);
 
             // Chart Container (Hidden by default)
             const chartContainer = document.createElement('div');
