@@ -120,10 +120,11 @@ class FMPTickerFetcher:
 
             # 3. Exclude specific patterns (like test tickers, etc.) if needed
             symbol = stock.get('symbol', '')
-            if not symbol or '^' in symbol or '.' in symbol: # Optionally exclude dot tickers if preferred
-                 # keeping dots is sometimes necessary (BRK.B), but yfinance needs conversion.
-                 # The user code handles dot conversion later in load_tickers
-                 pass
+            if not symbol:
+                continue
+
+            # Note: We keep dot tickers (e.g. BRK.B) because they are valid stocks,
+            # though they may need conversion for other tools (handled in load_tickers).
 
             filtered_stocks.append({
                 'Ticker': symbol,
