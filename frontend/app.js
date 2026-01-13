@@ -573,24 +573,84 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // I will implement the list of blocks style.
 
-        let html = `
-            <div style="margin-bottom: 10px; font-size: 0.9em; text-align: right; color: #555;">
-                Matches Found: ${stocks.length}
-            </div>
-            <div style="display: flex; flex-direction: column; gap: 10px;">
-        `;
+        // Clear content
+        contentDiv.innerHTML = '';
+
+        // Matches Header
+        const header = document.createElement('div');
+        header.style.cssText = 'margin-bottom: 10px; font-size: 0.9em; text-align: right; color: #555;';
+        header.textContent = `Matches Found: ${stocks.length}`;
+        contentDiv.appendChild(header);
+
+        // Container
+        const listContainer = document.createElement('div');
+        listContainer.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
 
         stocks.forEach(s => {
-            html += `
-                <div style="border: 2px solid black; padding: 10px; font-weight: bold; font-size: 0.7em; background: white;">
-                    <span style="font-size: 1.43em;">${s.ticker}</span>
-                    (RRS: ${s.rrs}, RVol: ${s.rvol}, ADR%: ${s.adr_pct}%)
-                </div>
-            `;
+            const item = document.createElement('div');
+            item.style.cssText = 'border: 2px solid black; padding: 10px; font-weight: bold; font-size: 0.7em; background: white;';
+
+            // Flex row for button-like behavior on ticker
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.alignItems = 'baseline';
+
+            // Ticker Button
+            const tickerSpan = document.createElement('span');
+            tickerSpan.textContent = s.ticker;
+            tickerSpan.style.cssText = 'font-size: 1.43em; cursor: pointer; text-decoration: underline; margin-right: 5px; color: #000;';
+
+            // Info Text
+            const infoSpan = document.createElement('span');
+            infoSpan.textContent = `(RRS: ${s.rrs}, RVol: ${s.rvol}, ADR%: ${s.adr_pct}%)`;
+
+            row.appendChild(tickerSpan);
+            row.appendChild(infoSpan);
+            item.appendChild(row);
+
+            // Chart Container (Hidden by default)
+            const chartContainer = document.createElement('div');
+            chartContainer.style.display = 'none';
+            chartContainer.style.marginTop = '10px';
+            chartContainer.style.textAlign = 'center';
+
+            // Toggle Logic
+            tickerSpan.addEventListener('click', () => {
+                const isHidden = chartContainer.style.display === 'none';
+                chartContainer.style.display = isHidden ? 'block' : 'none';
+
+                if (isHidden && !chartContainer.hasChildNodes()) {
+                    // Load image
+                    if (s.chart_image) {
+                        const img = document.createElement('img');
+                        img.alt = `${s.ticker} Chart`;
+                        img.style.maxWidth = '100%';
+                        img.style.border = '1px solid #ccc';
+
+                        // Use authenticated fetch logic for image if needed, or simple img src if cookies work
+                        // Since we implemented cookie-based auth for /api/stock-chart/, simple src should work
+                        // IF the browser sends the cookie.
+                        // However, we set the cookie with `SameSite=Strict` or `Lax`.
+                        // Ideally, we can just use the src.
+                        img.src = `/api/stock-chart/${s.chart_image}`;
+
+                        // Handle error
+                        img.onerror = () => {
+                            chartContainer.innerHTML = '<span style="color:red; font-size:0.8em;">Failed to load chart.</span>';
+                        };
+
+                        chartContainer.appendChild(img);
+                    } else {
+                        chartContainer.textContent = 'Chart not available.';
+                    }
+                }
+            });
+
+            item.appendChild(chartContainer);
+            listContainer.appendChild(item);
         });
 
-        html += '</div>';
-        contentDiv.innerHTML = html;
+        contentDiv.appendChild(listContainer);
     }
 
     // --- Auto Reload Function ---

@@ -165,11 +165,17 @@ def fetch_and_notify():
         logger.warning("No tickers found. Skipping screener.")
         strong_stocks = []
     else:
-        strong_stocks = run_screener_for_tickers(tickers, spy_df)
+        # Determine latest date key from market data for file naming
+        latest_item = market_data[-1]
+        latest_date_key = latest_item["date_key"]
+
+        # Pass DATA_DIR and date_key to enable chart generation
+        strong_stocks = run_screener_for_tickers(tickers, spy_df, data_dir=DATA_DIR, date_key=latest_date_key)
 
     logger.info(f"Screener complete. Found {len(strong_stocks)} strong stocks.")
 
     # Save Daily JSON
+    # Note: latest_date_key might be defined above or here depending on logic flow, ensure safe access
     latest_item = market_data[-1]
     latest_date_key = latest_item["date_key"]
 
