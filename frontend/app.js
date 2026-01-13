@@ -597,6 +597,12 @@ document.addEventListener('DOMContentLoaded', () => {
             tickerSpan.style.cssText = 'font-size: 1.43em; cursor: pointer; text-decoration: underline; color: #000;';
             line1.appendChild(tickerSpan);
 
+            // RealTime RVol (Magenta)
+            const rvolSpan = document.createElement('span');
+            rvolSpan.id = `rvol-${s.ticker}`;
+            rvolSpan.style.cssText = 'color: #FF00FF; margin-left: 10px; font-size: 0.9em;';
+            line1.appendChild(rvolSpan);
+
             // Indicators Line (Line 2)
             const line2 = document.createElement('div');
             line2.textContent = `RRS: ${s.rrs}, RVol: ${s.rvol}, ADR%: ${s.adr_pct}%`;
@@ -654,10 +660,40 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         contentDiv.appendChild(listContainer);
+
+        // Start polling for RealTime RVol if not already started
+        if (!window.rvolInterval) {
+            fetchRealTimeRVol(); // Initial fetch
+            window.rvolInterval = setInterval(fetchRealTimeRVol, 60000); // Poll every 1 minute
+        }
+    }
+
+    async function fetchRealTimeRVol() {
+        try {
+            const response = await fetchWithAuth('/api/realtime-rvol');
+            if (response.ok) {
+                const data = await response.json();
+                Object.keys(data).forEach(ticker => {
+                    const el = document.getElementById(`rvol-${ticker}`);
+                    if (el) {
+                        const val = data[ticker];
+                        el.textContent = `RVol: ${val.toFixed(2)}x`;
+                    }
+                });
+            }
+        } catch (error) {
+            console.error("Failed to fetch RealTime RVol:", error);
+        }
     }
 
     // --- Auto Reload Function ---
     function setupAutoReload() {
+        // 5-minute Force Reload (PWA)
+        setInterval(() => {
+            console.log("5-minute force reload triggered");
+            location.reload();
+        }, 300000); // 300,000 ms = 5 minutes
+
         const LAST_RELOAD_KEY = 'lastAutoReloadDate';
         setInterval(() => {
             const now = new Date();
