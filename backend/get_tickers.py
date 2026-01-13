@@ -14,9 +14,10 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 class FMPTickerFetcher:
-    """FMP Stock Screener API Wrapper"""
+    """FMP Stock List API Wrapper"""
 
-    BASE_URL = "https://financialmodelingprep.com/api/v3/stock-screener"
+    # Changed from stock-screener to stock/list (Free Tier Compatible)
+    BASE_URL = "https://financialmodelingprep.com/api/v3/stock/list"
 
     def __init__(self, api_key: str = None, rate_limit: int = None):
         """
@@ -33,8 +34,8 @@ class FMPTickerFetcher:
                 "or pass api_key parameter."
             )
 
-        # Rate limit settings (default 750 req/min for Premium Plan)
-        self.rate_limit = rate_limit or int(os.getenv('FMP_RATE_LIMIT', '750'))
+        # Rate limit settings
+        self.rate_limit = rate_limit or int(os.getenv('FMP_RATE_LIMIT', '300')) # Default to lower limit for safety
         self.session = Session(impersonate="chrome110")
         self.request_timestamps = []
 
@@ -79,46 +80,62 @@ class FMPTickerFetcher:
             logger.error(f"API request failed: {e}")
             return []
 
-    def get_stocks_by_exchange(self, exchange: str) -> List[Dict]:
-        """Get pure individual stocks from a specific exchange"""
-        params = {
-            'isEtf': 'false',              # Exclude ETFs
-            'isFund': 'false',             # Exclude Mutual Funds
-            'isActivelyTrading': 'true',   # Exclude inactive stocks
-            'exchange': exchange.lower(),
-            'limit': 10000                 # Max retrieval
-        }
+    def get_all_stocks(self) -> pd.DataFrame:
+        """
+        Get all stocks from FMP and filter locally for NASDAQ/NYSE and Stock type.
+        This uses the free /stock/list endpoint.
+        """
+        logger.info("Fetching full stock list from FMP...")
 
-        logger.info(f"Fetching stocks for {exchange.upper()}...")
-        stocks = self._make_request(params)
-        logger.info(f"  Retrieved {len(stocks)} stocks for {exchange.upper()}")
+        # /stock/list generally returns the full list without pagination params
+        stocks = self._make_request({})
 
-        return stocks
+        if not stocks:
+            return pd.DataFrame()
 
-    def get_all_stocks(self, exchanges: List[str] = None) -> pd.DataFrame:
-        """Get all individual stocks from specified exchanges"""
-        if exchanges is None:
-            exchanges = ['nasdaq', 'nyse', 'amex']
+        logger.info(f"Retrieved {len(stocks)} total items. Filtering...")
 
-        all_stocks = []
+        filtered_stocks = []
 
-        for exchange in exchanges:
-            stocks = self.get_stocks_by_exchange(exchange)
+        # Valid exchanges (FMP uses 'NASDAQ', 'NYSE', 'AMEX' etc.)
+        valid_exchanges = ['NASDAQ', 'NYSE']
 
-            for stock in stocks:
-                all_stocks.append({
-                    'Ticker': stock.get('symbol'),
-                    'Exchange': exchange.upper(),
-                    'CompanyName': stock.get('companyName', ''),
-                    'MarketCap': stock.get('marketCap', 0),
-                    'Sector': stock.get('sector', ''),
-                    'Industry': stock.get('industry', ''),
-                    'Country': stock.get('country', '')
-                })
+        for stock in stocks:
+            # 1. Filter by Type: Must be 'stock' (not 'etf', 'fund', 'trust')
+            stock_type = str(stock.get('type', '')).lower()
+            if stock_type != 'stock':
+                continue
 
-        df = pd.DataFrame(all_stocks)
+            # 2. Filter by Exchange
+            exchange = str(stock.get('exchangeShortName', '')).upper()
+            if exchange not in valid_exchanges:
+                # Fallback: check 'exchange' field if exchangeShortName is missing or different
+                exchange_long = str(stock.get('exchange', '')).upper()
+                if 'NASDAQ' in exchange_long:
+                    exchange = 'NASDAQ'
+                elif 'NYSE' in exchange_long:
+                    exchange = 'NYSE'
+                else:
+                    continue
 
-        # Remove duplicates (if ticker listed on multiple exchanges)
+            # 3. Exclude specific patterns (like test tickers, etc.) if needed
+            symbol = stock.get('symbol', '')
+            if not symbol or '^' in symbol or '.' in symbol: # Optionally exclude dot tickers if preferred
+                 # keeping dots is sometimes necessary (BRK.B), but yfinance needs conversion.
+                 # The user code handles dot conversion later in load_tickers
+                 pass
+
+            filtered_stocks.append({
+                'Ticker': symbol,
+                'Exchange': exchange,
+                'Name': stock.get('name', ''),
+                'Price': stock.get('price', 0),
+                'ExchangeShort': stock.get('exchangeShortName', '')
+            })
+
+        df = pd.DataFrame(filtered_stocks)
+
+        # Remove duplicates
         if not df.empty:
             df.drop_duplicates(subset=['Ticker'], keep='first', inplace=True)
 
@@ -126,21 +143,19 @@ class FMPTickerFetcher:
 
 def update_stock_csv_from_fmp(filepath: str = 'stock.csv') -> bool:
     """
-    Fetches tickers from FMP and updates the stock.csv file.
-    Returns True if successful, False otherwise.
+    Fetches tickers from FMP (Free Plan Compatible) and updates the stock.csv file.
     """
     try:
-        logger.info("Starting FMP ticker update...")
+        logger.info("Starting FMP ticker update (Stock List Mode)...")
         fetcher = FMPTickerFetcher()
-        exchanges = ['nasdaq', 'nyse']
 
-        df = fetcher.get_all_stocks(exchanges)
+        df = fetcher.get_all_stocks()
 
         if df.empty:
-            logger.warning("FMP returned no stocks. Update aborted.")
+            logger.warning("FMP returned no stocks after filtering. Update aborted.")
             return False
 
-        logger.info(f"Total stocks retrieved: {len(df)}")
+        logger.info(f"Total stocks after filtering: {len(df)}")
 
         # Save to CSV (Ticker and Exchange only)
         output_df = df[['Ticker', 'Exchange']].copy()
@@ -154,7 +169,6 @@ def update_stock_csv_from_fmp(filepath: str = 'stock.csv') -> bool:
 
 if __name__ == '__main__':
     # When run as script, update backend/stock.csv
-    # Assuming script is run from repo root or backend/
     target_path = 'stock.csv'
     if os.path.exists('backend/stock.csv'):
         target_path = 'backend/stock.csv'
