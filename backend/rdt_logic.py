@@ -3,7 +3,9 @@ import pandas_ta as ta
 import numpy as np
 import yfinance as yf
 import datetime
+import os
 from backend.screener_logic import RDTIndicators
+from backend.chart_generator import generate_stock_chart
 
 def calculate_wma(series, length):
     """Calculates Weighted Moving Average (WMA)."""
@@ -169,15 +171,15 @@ def get_market_analysis_data(period="6mo"):
         print(f"Error in get_market_analysis_data: {e}")
         return None, None
 
-def run_screener_for_tickers(tickers, spy_df):
+def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None):
     """
     Runs the RDT screener for a list of tickers against the SPY dataframe.
+    If data_dir and date_key are provided, generates and saves charts for passing stocks.
     """
     strong_stocks = []
 
     try:
         # Fetch 1y data to ensure we have enough for 200 SMA
-        # Chunking tickers to avoid too massive URL strings if list is huge
         CHUNK_SIZE = 100
         for i in range(0, len(tickers), CHUNK_SIZE):
             chunk = tickers[i:i+CHUNK_SIZE]
@@ -214,12 +216,21 @@ def run_screener_for_tickers(tickers, spy_df):
                     check_res = RDTIndicators.check_filters(last_row)
 
                     if check_res['All_Pass']:
-                        strong_stocks.append({
+                        stock_info = {
                             "ticker": ticker,
                             "rrs": round(last_row['RRS'], 2),
                             "rvol": round(last_row['RVol'], 2),
                             "adr_pct": round(last_row['ADR_Percent'], 2)
-                        })
+                        }
+
+                        # Generate Chart
+                        if data_dir and date_key:
+                            chart_filename = f"{date_key}-{ticker}.png"
+                            chart_path = os.path.join(data_dir, chart_filename)
+                            if generate_stock_chart(df_calc, chart_path, ticker):
+                                stock_info["chart_image"] = chart_filename
+
+                        strong_stocks.append(stock_info)
 
                 except Exception as e:
                     # print(f"Error screening {ticker}: {e}")
