@@ -244,6 +244,18 @@ def get_market_chart(current_user: str = Depends(get_current_user_for_notificati
          raise HTTPException(status_code=404, detail="Chart image not found.")
     return FileResponse(path)
 
+@app.get("/api/stock-chart/{filename}")
+def get_stock_chart(filename: str, current_user: str = Depends(get_current_user_for_notification)):
+    """Returns a specific stock chart image. Allows cookie auth for <img> tags."""
+    # Basic validation to prevent directory traversal
+    if not re.match(r'^[a-zA-Z0-9_\-\.]+\.png$', filename):
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+
+    path = os.path.join(DATA_DIR, filename)
+    if not os.path.exists(path):
+         raise HTTPException(status_code=404, detail="Chart image not found.")
+    return FileResponse(path)
+
 @app.get("/api/daily/{date_key}")
 def get_daily_data(date_key: str, current_user: str = Depends(get_current_user)):
     """Returns the daily data (Strong Stocks, Status) for a specific date (YYYYMMDD)."""

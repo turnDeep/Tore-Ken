@@ -3,7 +3,9 @@ import pandas_ta as ta
 import numpy as np
 import yfinance as yf
 import datetime
+import os
 from backend.screener_logic import RDTIndicators
+from backend.stock_chart_generator import generate_stock_chart
 
 def calculate_wma(series, length):
     """Calculates Weighted Moving Average (WMA)."""
@@ -214,11 +216,23 @@ def run_screener_for_tickers(tickers, spy_df):
                     check_res = RDTIndicators.check_filters(last_row)
 
                     if check_res['All_Pass']:
+                        # Generate Chart
+                        # Use the latest date for filename
+                        date_str = last_row.name.strftime('%Y%m%d')
+                        image_filename = f"{date_str}-{ticker}.png"
+                        output_dir = "data"
+                        if not os.path.exists(output_dir):
+                            os.makedirs(output_dir)
+                        output_path = os.path.join(output_dir, image_filename)
+
+                        generate_stock_chart(df_calc, ticker, output_path)
+
                         strong_stocks.append({
                             "ticker": ticker,
                             "rrs": round(last_row['RRS'], 2),
                             "rvol": round(last_row['RVol'], 2),
-                            "adr_pct": round(last_row['ADR_Percent'], 2)
+                            "adr_pct": round(last_row['ADR_Percent'], 2),
+                            "chart_image": image_filename
                         })
 
                 except Exception as e:

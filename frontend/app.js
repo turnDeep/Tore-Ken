@@ -581,9 +581,14 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         stocks.forEach(s => {
+            // Check if chart_image exists (it might not for older data)
+            const tickerHtml = s.chart_image
+                ? `<button class="stock-ticker-btn" onclick="openStockChart('${s.ticker}', '${s.chart_image}')" style="font-size: 1.43em; font-weight: bold;">${s.ticker}</button>`
+                : `<span style="font-size: 1.43em;">${s.ticker}</span>`;
+
             html += `
                 <div style="border: 2px solid black; padding: 10px; font-weight: bold; font-size: 0.7em; background: white;">
-                    <span style="font-size: 1.43em;">${s.ticker}</span>
+                    ${tickerHtml}
                     (RRS: ${s.rrs}, RVol: ${s.rvol}, ADR%: ${s.adr_pct}%)
                 </div>
             `;
@@ -619,3 +624,55 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
     setupAutoReload();
 });
+
+// --- Global Modal Function ---
+function openStockChart(ticker, filename) {
+    const modalOverlay = document.createElement('div');
+    modalOverlay.className = 'modal-overlay';
+
+    const content = document.createElement('div');
+    content.className = 'modal-content';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'modal-close-btn';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = () => {
+        document.body.removeChild(modalOverlay);
+    };
+
+    const img = document.createElement('img');
+    img.src = `/api/stock-chart/${filename}`;
+    img.alt = `${ticker} Chart`;
+    img.style.maxWidth = '100%';
+    img.style.height = 'auto';
+    img.style.display = 'block';
+
+    // Loading state for image
+    const loading = document.createElement('div');
+    loading.className = 'loading-spinner-small';
+    content.appendChild(loading);
+
+    img.onload = () => {
+        loading.style.display = 'none';
+    };
+    img.onerror = () => {
+        loading.style.display = 'none';
+        const err = document.createElement('p');
+        err.textContent = 'Failed to load chart image.';
+        content.appendChild(err);
+    };
+
+    content.appendChild(closeBtn);
+    content.appendChild(img);
+    modalOverlay.appendChild(content);
+
+    modalOverlay.addEventListener('click', (e) => {
+        if (e.target === modalOverlay) {
+            document.body.removeChild(modalOverlay);
+        }
+    });
+
+    document.body.appendChild(modalOverlay);
+}
+// Expose to window so onclick works
+window.openStockChart = openStockChart;
