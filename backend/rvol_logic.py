@@ -138,7 +138,7 @@ class RealTimeRvolAnalyzer:
 
             # Volume Calculation
             tick_volume = 0
-            day_volume = msg.get('dayVolume')
+            day_volume = msg.get('day_volume')
 
             if day_volume is not None:
                 if self.current_bar['last_day_volume'] is not None:
@@ -147,11 +147,11 @@ class RealTimeRvolAnalyzer:
                         tick_volume = diff
                 else:
                     # First packet, can't calc diff yet, fallback to lastSize
-                    tick_volume = msg.get('lastSize', 0)
+                    tick_volume = msg.get('last_size', 0)
 
                 self.current_bar['last_day_volume'] = day_volume
             else:
-                tick_volume = msg.get('lastSize', 0)
+                tick_volume = msg.get('last_size', 0)
 
             # 5-min Bar Logic
             bar_start = self._get_bar_start_time(current_dt)
