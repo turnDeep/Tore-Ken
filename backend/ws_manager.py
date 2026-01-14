@@ -66,6 +66,26 @@ class WebSocketManager:
 
         logger.info(f"Initialized {len(self.analyzers)} analyzers.")
 
+    async def retry_missing_analyzers(self):
+        """Retries initialization for tickers that failed."""
+        missing_tickers = [t for t in self.tickers if t not in self.analyzers]
+        if not missing_tickers:
+            return
+
+        logger.info(f"Retrying initialization for missing tickers: {missing_tickers}")
+        loop = asyncio.get_running_loop()
+
+        for ticker in missing_tickers:
+            try:
+                profile = await loop.run_in_executor(None, generate_volume_profile, ticker)
+                if not profile.empty:
+                    self.analyzers[ticker] = RealTimeRvolAnalyzer(ticker, profile)
+                    logger.info(f"Successfully initialized analyzer for {ticker}")
+                else:
+                    logger.warning(f"Still could not generate profile for {ticker}")
+            except Exception as e:
+                logger.error(f"Error initializing analyzer for {ticker}: {e}")
+
     async def start(self):
         """Starts the background task."""
         if self.running:
@@ -117,6 +137,9 @@ class WebSocketManager:
                     if not self.analyzers:
                          self.load_tickers()
                          await self.initialize_analyzers()
+                    else:
+                         # Retry any missing ones (e.g. TTMI failed on first try)
+                         await self.retry_missing_analyzers()
 
                     # yfinance WebSocket wrapper
                     async with yf.AsyncWebSocket() as ws:

@@ -139,11 +139,17 @@ class RealTimeRvolAnalyzer:
             # Volume Calculation
             tick_volume = 0
             # day_volume and last_size come as strings from yfinance WebSocket
-            day_volume_str = msg.get('day_volume')
-            last_size_str = msg.get('last_size')
+            # Support both snake_case (new yfinance) and camelCase (old/some messages)
+            day_volume_str = msg.get('day_volume') or msg.get('dayVolume')
+            last_size_str = msg.get('last_size') or msg.get('lastSize')
 
             day_volume = int(day_volume_str) if day_volume_str is not None else None
             last_size = int(last_size_str) if last_size_str is not None else 0
+
+            if day_volume is None and last_size == 0:
+                # Log only once per minute to avoid spamming if a ticker is consistently missing data
+                if current_dt.second == 0:
+                    logger.debug(f"[{self.ticker}] Warning: No volume data in message: {msg.keys()}")
 
             if day_volume is not None:
                 if self.current_bar['last_day_volume'] is not None:
