@@ -178,8 +178,7 @@ def fetch_and_notify():
 
     logger.info(f"Screener complete. Found {len(strong_stocks)} strong stocks.")
 
-    # Save Daily JSON
-    # Note: latest_date_key might be defined above or here depending on logic flow, ensure safe access
+    # Save Daily JSON (Latest)
     latest_item = market_data[-1]
     latest_date_key = latest_item["date_key"]
 
@@ -195,15 +194,60 @@ def fetch_and_notify():
     daily_filepath = os.path.join(DATA_DIR, daily_filename)
     with open(daily_filepath, "w") as f:
         json.dump(daily_data, f)
-
     logger.info(f"Saved {daily_filename}")
 
-    # Also save as 'latest.json' for easier frontend access to "current" data
+    # Also save as 'latest.json'
     latest_filepath = os.path.join(DATA_DIR, "latest.json")
     with open(latest_filepath, "w") as f:
         json.dump(daily_data, f)
 
-    # Send notifications
+    # --- Backfill Logic: Check past 30 days ---
+    logger.info("Checking for missing past data (30 days)...")
+
+    # Get last 30 market dates from history (reverse order to prioritize recent)
+    past_30_days = sorted(market_data, key=lambda x: x['date_key'], reverse=True)[:30]
+
+    for item in past_30_days:
+        d_key = item['date_key']
+        d_str = item['date'] # YYYY/MM/DD or YYYY-MM-DD
+
+        # Format target_date for yfinance slicing (YYYY-MM-DD)
+        target_date_obj = datetime.datetime.strptime(d_key, "%Y%m%d")
+        target_date_str = target_date_obj.strftime("%Y-%m-%d")
+
+        f_path = os.path.join(DATA_DIR, f"{d_key}.json")
+
+        if not os.path.exists(f_path):
+            logger.info(f"[Backfill] Missing data for {d_str} ({d_key}). Generating...")
+
+            # Run screener for this specific date
+            # Note: This is expensive if many days are missing.
+            # Ideally we would cache the bulk download, but run_screener_for_tickers handles chunks.
+            # Passing target_date ensures correct historical state.
+            backfill_stocks = run_screener_for_tickers(
+                tickers,
+                spy_df,
+                data_dir=DATA_DIR,
+                date_key=d_key,
+                target_date=target_date_str
+            )
+
+            backfill_data = {
+                "date": d_str,
+                "market_status": item["market_status"],
+                "status_text": item["status_text"],
+                "strong_stocks": backfill_stocks,
+                "last_updated": datetime.datetime.now().isoformat()
+            }
+
+            with open(f_path, "w") as f:
+                json.dump(backfill_data, f)
+            logger.info(f"[Backfill] Saved {d_key}.json with {len(backfill_stocks)} stocks.")
+        else:
+            # logger.debug(f"Data exists for {d_key}. Skipping.")
+            pass
+
+    # Send notifications (Only for the latest data)
     send_push_notifications(daily_data)
 
 if __name__ == "__main__":
