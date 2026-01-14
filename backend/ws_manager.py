@@ -19,6 +19,7 @@ class WebSocketManager:
         self.analyzers: Dict[str, RealTimeRvolAnalyzer] = {}
         self.running = False
         self.task = None
+        self.monitor_task = None
         self.tickers: List[str] = []
 
     @classmethod
@@ -94,6 +95,7 @@ class WebSocketManager:
         # Don't block startup with initialization. Let _run handle it.
         self.running = True
         self.task = asyncio.create_task(self._run())
+        self.monitor_task = asyncio.create_task(self._monitor_analyzers())
         logger.info("WebSocketManager started.")
 
     async def stop(self):
@@ -105,6 +107,14 @@ class WebSocketManager:
                 await self.task
             except asyncio.CancelledError:
                 pass
+
+        if self.monitor_task:
+            self.monitor_task.cancel()
+            try:
+                await self.monitor_task
+            except asyncio.CancelledError:
+                pass
+
         logger.info("WebSocketManager stopped.")
 
     def handle_message(self, msg):
@@ -116,6 +126,13 @@ class WebSocketManager:
                 self.analyzers[ticker_id].process_message(msg)
         except Exception as e:
             logger.error(f"Error handling message: {e}")
+
+    async def _monitor_analyzers(self):
+        """Periodically checks for missing analyzers and retries them."""
+        while self.running:
+            await asyncio.sleep(60)
+            if MarketSchedule.is_market_open():
+                 await self.retry_missing_analyzers()
 
     async def _run(self):
         """Main loop."""
@@ -132,8 +149,6 @@ class WebSocketManager:
                 logger.info(f"Market Open: {is_open} (Force: {force_run}). Connecting to WebSocket...")
                 try:
                     # Re-load tickers if needed (e.g., if we were waiting)
-                    # Ideally, check if tickers have changed, but reloading daily when market opens is safe.
-                    # However, if we are already in the loop, we might want to ensure analyzers are ready.
                     if not self.analyzers:
                          self.load_tickers()
                          await self.initialize_analyzers()
@@ -146,7 +161,6 @@ class WebSocketManager:
                         if not self.tickers:
                              logger.warning("No tickers to subscribe.")
                              await asyncio.sleep(60)
-                             # Retry loading in case file was created
                              self.load_tickers()
                              await self.initialize_analyzers()
                              continue
@@ -162,13 +176,9 @@ class WebSocketManager:
             else:
                 logger.info("Market Closed. Waiting and refreshing data...")
                 # When market is closed, we should refresh data periodically
-                # so that when it opens, we have the latest "Strong Stocks" from the cron job.
                 await asyncio.sleep(300) # Wait 5 mins
 
-                # Refresh tickers and analyzers
                 self.load_tickers()
-                # Run initialization in background or await it?
-                # Since market is closed, awaiting is fine.
                 await self.initialize_analyzers()
 
     def get_all_rvols(self) -> Dict[str, float]:
