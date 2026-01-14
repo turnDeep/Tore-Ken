@@ -171,20 +171,32 @@ def get_market_analysis_data(period="6mo"):
         print(f"Error in get_market_analysis_data: {e}")
         return None, None
 
-def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None):
+def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, target_date=None):
     """
     Runs the RDT screener for a list of tickers against the SPY dataframe.
     If data_dir and date_key are provided, generates and saves charts for passing stocks.
+    If target_date (str 'YYYY-MM-DD' or datetime) is provided, screens based on that specific date.
     """
     strong_stocks = []
 
+    # Prepare target date filter
+    target_dt = None
+    if target_date:
+        if isinstance(target_date, str):
+             target_dt = pd.to_datetime(target_date)
+        else:
+             target_dt = target_date
+
     try:
         # Fetch 1y data to ensure we have enough for 200 SMA
+        # Note: If target_date is far in the past, "1y" from now might not be enough context for that date.
+        # But for "past month backfill", 1y is fine.
         CHUNK_SIZE = 100
         for i in range(0, len(tickers), CHUNK_SIZE):
             chunk = tickers[i:i+CHUNK_SIZE]
 
             try:
+                # We fetch standard 1y. If we needed deeper history for old backfills, we'd adjust start/end.
                 data = yf.download(chunk, period="1y", group_by='ticker', threads=True, progress=False, ignore_tz=True)
             except Exception as e:
                 print(f"Error fetching chunk {i}: {e}")
@@ -204,8 +216,24 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None):
 
                     df = df.dropna(how='all')
 
+                    # If target date is set, slice data up to that date
+                    if target_dt:
+                        # Ensure index is datetime
+                        if not isinstance(df.index, pd.DatetimeIndex):
+                             df.index = pd.to_datetime(df.index)
+
+                        # Slice
+                        df = df[df.index <= target_dt]
+                        if df.empty:
+                            continue
+
                     if len(df) < 200:
                         continue
+
+                    # Also need to slice SPY to match context if strict,
+                    # but calculate_all handles alignment via intersection.
+                    # Ideally we pass the full SPY so indicators can be calc'd properly,
+                    # then we look at the last row.
 
                     df_calc = RDTIndicators.calculate_all(df, spy_df)
 
@@ -213,6 +241,15 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None):
                         continue
 
                     last_row = df_calc.iloc[-1]
+
+                    # Verify the last row date matches target_date (or is the closest trading day)
+                    # If backfilling, we want the state AT that date.
+                    if target_dt:
+                        row_date = last_row.name
+                        # If the last available data is older than target date by too much (e.g. > 5 days), skip
+                        if (target_dt - row_date).days > 5:
+                            continue
+
                     check_res = RDTIndicators.check_filters(last_row)
 
                     if check_res['All_Pass']:
