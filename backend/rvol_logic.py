@@ -48,6 +48,7 @@ class MarketSchedule:
 def generate_volume_profile(ticker: str, lookback_days: int = 20) -> pd.DataFrame:
     """
     Generates the volume profile (baseline) for a ticker based on historical 5-minute bars.
+    Returns a DataFrame with 'AvgVolume' and 'CumVolume' indexed by time (9:30, 9:35, ...).
     """
     logger.info(f"[{ticker}] Fetching past {lookback_days} days of 5m data...")
 
@@ -72,28 +73,39 @@ def generate_volume_profile(ticker: str, lookback_days: int = 20) -> pd.DataFram
             if time_col in df.columns:
                 df = df.set_index(time_col)
 
-        # Filter for regular market hours (9:30 - 16:00 ET) if needed,
-        # but yfinance 5m usually returns market hours.
-        # We need to extract the TIME component in ET.
-
-        # Convert to Eastern Time just to be safe if it's not
+        # Convert to Eastern Time
         if df.index.tz is None:
-            # Assume UTC if no TZ, but yfinance usually returns localized or UTC
              df.index = df.index.tz_localize('UTC').tz_convert('US/Eastern')
         else:
              df.index = df.index.tz_convert('US/Eastern')
 
-        # Filter out "today" to ensure baseline is historical
+        # Filter out "today"
         today_et = datetime.now(pytz.timezone('US/Eastern')).date()
         df_history = df[df.index.date < today_et].copy()
 
-        # Group by Time and calculate Median (or Mean)
-        # Using Median is more robust to outliers
+        # Group by Time and calculate Median
         df_history['Time'] = df_history.index.time
         profile = df_history.groupby('Time')['Volume'].median()
-
-        # Create DataFrame
         profile_df = profile.to_frame(name='AvgVolume')
+
+        # Reindex to ensure full market day coverage (9:30 to 15:55 for 5m bars)
+        market_times = []
+        curr = datetime.now().replace(hour=9, minute=30, second=0, microsecond=0)
+        end = curr.replace(hour=16, minute=0)
+        while curr < end:
+            market_times.append(curr.time())
+            curr += timedelta(minutes=5)
+
+        profile_df = profile_df.reindex(market_times, fill_value=0)
+
+        # Calculate Cumulative Volume
+        # CumVolume at row T implies total average volume accumulated by the END of T's interval?
+        # Standard convention: The bar at 9:30 covers 9:30-9:35.
+        # So 'CumVolume' at 9:30 row should probably be the volume accumulated UP TO 9:35.
+        # Let's define: CumVolume[T] = Sum(AvgVolume) from 9:30 up to and including T.
+        # So CumVolume[9:30] = AvgVolume[9:30].
+        # CumVolume[9:35] = AvgVolume[9:30] + AvgVolume[9:35].
+        profile_df['CumVolume'] = profile_df['AvgVolume'].cumsum()
 
         logger.info(f"[{ticker}] Baseline generated with {len(profile_df)} slots.")
         return profile_df
@@ -109,110 +121,103 @@ class RealTimeRvolAnalyzer:
         self.profile = profile
         self.current_rvol = 0.0
 
-        # State for current 5-min bar
-        self.current_bar = {
-            'start_time': None,
-            'volume': 0,
-            'last_day_volume': None  # To calculate delta
-        }
-
-    def _get_bar_start_time(self, dt_obj: datetime):
-        """Rounds datetime to the nearest 5-minute floor."""
-        minute = (dt_obj.minute // 5) * 5
-        return dt_obj.replace(minute=minute, second=0, microsecond=0)
+        # State
+        self.current_day_volume = 0
 
     def process_message(self, msg: dict):
         """
         Process a WebSocket message (dict) from yfinance.
-        Expected keys: 'id', 'price', 'time', 'dayVolume', 'lastSize'
         """
         try:
             # Timestamp (ms)
             ts_ms = msg.get('time')
             if not ts_ms:
                 return
-
-            ts_ms = int(ts_ms) # Ensure int
-
+            ts_ms = int(ts_ms)
             current_dt = datetime.fromtimestamp(ts_ms / 1000.0, tz=pytz.timezone('US/Eastern'))
 
-            # Volume Calculation
-            tick_volume = 0
-            # day_volume and last_size come as strings from yfinance WebSocket
-            # Support both snake_case (new yfinance) and camelCase (old/some messages)
+            # Extract Volume
             day_volume_str = msg.get('day_volume') or msg.get('dayVolume')
             last_size_str = msg.get('last_size') or msg.get('lastSize')
 
             day_volume = int(day_volume_str) if day_volume_str is not None else None
             last_size = int(last_size_str) if last_size_str is not None else 0
 
-            if day_volume is None and last_size == 0:
-                # Log only once per minute to avoid spamming if a ticker is consistently missing data
-                if current_dt.second == 0:
-                    logger.debug(f"[{self.ticker}] Warning: No volume data in message: {msg.keys()}")
-
+            # Logic to maintain reliable current_day_volume
             if day_volume is not None:
-                if self.current_bar['last_day_volume'] is not None:
-                    diff = day_volume - self.current_bar['last_day_volume']
-                    if diff >= 0:
-                        tick_volume = diff
-                else:
-                    # First packet, can't calc diff yet, fallback to last_size
-                    tick_volume = last_size
-
-                self.current_bar['last_day_volume'] = day_volume
+                self.current_day_volume = day_volume
             else:
-                tick_volume = last_size
+                # If day_volume is missing, assume it's an additive tick?
+                # yfinance WS behavior: sometimes just price updates.
+                # If last_size > 0, we *could* add it, but mixing 'day_volume' updates and 'tick' accumulation is risky.
+                # Usually 'day_volume' comes frequently enough.
+                # But if we rely on it, we might lag.
+                # Safest: Use day_volume if available. If not, don't update volume (just wait for next).
+                # Exception: Early morning ticks might populate day_volume slowly?
+                # For Strong Stocks, we expect frequent updates.
+                pass
 
-            # 5-min Bar Logic
-            bar_start = self._get_bar_start_time(current_dt)
-
-            if self.current_bar['start_time'] is None:
-                self.current_bar['start_time'] = bar_start
-                self.current_bar['volume'] = tick_volume
-            elif bar_start > self.current_bar['start_time']:
-                # New bar started, finalize old one (optional) and reset
-                self.current_bar['start_time'] = bar_start
-                self.current_bar['volume'] = tick_volume
-            else:
-                # Same bar, accumulate
-                self.current_bar['volume'] += tick_volume
-
-            # Calculate RVOL
+            # Update RVOL
             self._update_rvol(current_dt)
 
         except Exception as e:
             logger.error(f"[{self.ticker}] Error processing message: {e}")
 
     def _update_rvol(self, current_dt: datetime):
-        """Calculate and update self.current_rvol"""
-        if self.profile.empty:
+        """Calculate Cumulative RVol"""
+        if self.profile.empty or self.current_day_volume == 0:
             return
 
-        slot_time = self.current_bar['start_time'].time()
+        # Current time details
+        # We need to find the "Bucket" we are currently in.
+        # E.g. 9:32 is in the 9:30 bucket.
+        curr_time = current_dt.time()
 
-        if slot_time in self.profile.index:
-            avg_vol = self.profile.loc[slot_time, 'AvgVolume']
-            current_vol = self.current_bar['volume']
+        # Determine the start of the current 5m bar
+        minute_floor = (current_dt.minute // 5) * 5
+        bar_start_time = time(current_dt.hour, minute_floor)
 
-            if avg_vol > 0:
-                # Simple RVOL based on accumulated volume vs full bucket average
-                # Note: For strict "in-progress" comparison, we might want to project or use ratio.
-                # The user prompt report suggests: "Realtime accumulated vs Completed Past Average" is simplest.
-                # But it also mentions projection.
-                # "Time-Segmented Relative Volume" usually means Volume_Now / Avg_Volume_At_Same_Time_In_Past.
-                # If we are 1 minute into a 5 minute bar, our volume is naturally 1/5th of the full bar.
-                # Comparing it to a full 5-min average will show low RVOL.
-                # We should probably project it, or compare to "Avg Volume up to this minute".
-                # But our profile is 5-min resolution.
+        # 1. Get Baseline Volume accumulated up to the START of this bar
+        #    This is CumVolume of the *previous* bucket (bar_start_time - 5min).
+        #    Alternatively, Sum(AvgVolume) where Time < bar_start_time.
 
-                # Let's use Linear Projection as described in the report for better UX.
-                elapsed_seconds = (current_dt - self.current_bar['start_time']).total_seconds()
+        # Ensure we can look up in profile
+        if bar_start_time not in self.profile.index:
+            logger.warning(f"Bar start {bar_start_time} not in profile index: {self.profile.index}")
+            return
 
-                # Avoid noise in first few seconds
-                if elapsed_seconds > 10:
-                    projected_vol = current_vol * (300 / elapsed_seconds)
-                    self.current_rvol = projected_vol / avg_vol
-                else:
-                     # Fallback to simple ratio (will be small)
-                    self.current_rvol = current_vol / avg_vol
+        # Get CumVolume of the *previous* bucket
+        # We can find the location of bar_start_time
+        try:
+            loc = self.profile.index.get_loc(bar_start_time)
+
+            if loc > 0:
+                # Cumulative volume of all completed bars before this one
+                # Note: profile.iloc[loc-1]['CumVolume'] gives sum up to end of previous bar.
+                base_accumulated_vol = self.profile.iloc[loc-1]['CumVolume']
+            else:
+                # First bar of the day (9:30)
+                base_accumulated_vol = 0
+
+            # 2. Add interpolated volume for the current bar
+            current_bar_avg = self.profile.loc[bar_start_time, 'AvgVolume']
+
+            # Elapsed seconds in current bar (0 to 300)
+            elapsed_seconds = (current_dt.minute % 5) * 60 + current_dt.second
+            # Clamp to 300 (end of bar)
+            elapsed_seconds = min(elapsed_seconds, 300)
+
+            # Interpolate: assume volume comes in linearly over the 5 mins
+            # (Or we could use a more complex curve, but linear is standard for TSV interpolation)
+            current_bar_expected = current_bar_avg * (elapsed_seconds / 300.0)
+
+            expected_total_vol = base_accumulated_vol + current_bar_expected
+
+            # 3. Calculate Ratio
+            if expected_total_vol > 0:
+                self.current_rvol = self.current_day_volume / expected_total_vol
+            else:
+                self.current_rvol = 0.0
+
+        except Exception as e:
+            logger.error(f"Error calc rvol for {self.ticker}: {e}")
