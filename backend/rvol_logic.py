@@ -124,6 +124,17 @@ class RealTimeRvolAnalyzer:
         # State
         self.current_day_volume = 0
 
+    def update_volume(self, volume: int, current_dt: datetime = None):
+        """
+        Updates volume and recalculates RVol.
+        If current_dt is None, use current ET time.
+        """
+        if current_dt is None:
+             current_dt = datetime.now(pytz.timezone('US/Eastern'))
+
+        self.current_day_volume = volume
+        self._update_rvol(current_dt)
+
     def process_message(self, msg: dict):
         """
         Process a WebSocket message (dict) from yfinance.
@@ -138,27 +149,17 @@ class RealTimeRvolAnalyzer:
 
             # Extract Volume
             day_volume_str = msg.get('day_volume') or msg.get('dayVolume')
-            last_size_str = msg.get('last_size') or msg.get('lastSize')
 
             day_volume = int(day_volume_str) if day_volume_str is not None else None
-            last_size = int(last_size_str) if last_size_str is not None else 0
 
             # Logic to maintain reliable current_day_volume
             if day_volume is not None:
-                self.current_day_volume = day_volume
+                self.update_volume(day_volume, current_dt)
             else:
-                # If day_volume is missing, assume it's an additive tick?
-                # yfinance WS behavior: sometimes just price updates.
-                # If last_size > 0, we *could* add it, but mixing 'day_volume' updates and 'tick' accumulation is risky.
-                # Usually 'day_volume' comes frequently enough.
-                # But if we rely on it, we might lag.
-                # Safest: Use day_volume if available. If not, don't update volume (just wait for next).
-                # Exception: Early morning ticks might populate day_volume slowly?
-                # For Strong Stocks, we expect frequent updates.
-                pass
-
-            # Update RVOL
-            self._update_rvol(current_dt)
+                # Still try to update rvol with new time (even if volume didn't change?)
+                # If we don't have new volume, using old volume with new time effectively DECREASES RVol (as expected vol increases).
+                # This is correct behavior.
+                self._update_rvol(current_dt)
 
         except Exception as e:
             logger.error(f"[{self.ticker}] Error processing message: {e}")

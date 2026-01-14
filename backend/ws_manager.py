@@ -20,6 +20,7 @@ class WebSocketManager:
         self.running = False
         self.task = None
         self.monitor_task = None
+        self.poll_task = None
         self.tickers: List[str] = []
 
     @classmethod
@@ -96,6 +97,7 @@ class WebSocketManager:
         self.running = True
         self.task = asyncio.create_task(self._run())
         self.monitor_task = asyncio.create_task(self._monitor_analyzers())
+        self.poll_task = asyncio.create_task(self._poll_volumes_loop())
         logger.info("WebSocketManager started.")
 
     async def stop(self):
@@ -112,6 +114,13 @@ class WebSocketManager:
             self.monitor_task.cancel()
             try:
                 await self.monitor_task
+            except asyncio.CancelledError:
+                pass
+
+        if self.poll_task:
+            self.poll_task.cancel()
+            try:
+                await self.poll_task
             except asyncio.CancelledError:
                 pass
 
@@ -133,6 +142,47 @@ class WebSocketManager:
             await asyncio.sleep(60)
             if MarketSchedule.is_market_open():
                  await self.retry_missing_analyzers()
+
+    def _fetch_volumes_sync(self, tickers: List[str]) -> Dict[str, int]:
+        """Fetches volume for a list of tickers synchronously (for use in executor)."""
+        results = {}
+        for t in tickers:
+            try:
+                 # fast_info access triggers API call
+                 vol = yf.Ticker(t).fast_info.last_volume
+                 if vol is not None:
+                     results[t] = vol
+            except Exception as e:
+                # Log only debug or warning to avoid spam
+                # logger.debug(f"Error polling volume for {t}: {e}")
+                pass
+        return results
+
+    async def _poll_volumes_loop(self):
+        """Periodically polls for volume data as a fallback/primary source."""
+        logger.info("Starting volume polling loop...")
+        loop = asyncio.get_running_loop()
+
+        while self.running:
+            try:
+                # Check market open or debug flag
+                force_run = os.getenv("DEBUG_WS", "false").lower() == "true"
+                is_open = MarketSchedule.is_market_open()
+
+                if is_open or force_run:
+                    tickers = list(self.analyzers.keys())
+                    if tickers:
+                        # Run blocking fetch in thread executor
+                        volumes = await loop.run_in_executor(None, self._fetch_volumes_sync, tickers)
+
+                        for t, vol in volumes.items():
+                            if t in self.analyzers:
+                                self.analyzers[t].update_volume(vol)
+
+            except Exception as e:
+                logger.error(f"Error in volume polling loop: {e}")
+
+            await asyncio.sleep(15)  # Poll every 15 seconds
 
     async def _run(self):
         """Main loop."""
