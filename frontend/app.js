@@ -594,24 +594,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const line1 = document.createElement('div');
             const tickerSpan = document.createElement('span');
             tickerSpan.textContent = s.ticker;
-            tickerSpan.style.cssText = 'font-size: 1.43em; cursor: pointer; text-decoration: underline; color: #000;';
+            tickerSpan.style.cssText = 'font-size: 1.6em; cursor: pointer; text-decoration: underline; color: #000;';
             line1.appendChild(tickerSpan);
 
             // RealTime RVol (Magenta)
             const rvolSpan = document.createElement('span');
             rvolSpan.id = `rvol-${s.ticker}`;
-            rvolSpan.style.cssText = 'color: #FF00FF; margin-left: 10px; font-size: 0.9em;';
+            rvolSpan.style.cssText = 'color: #FF00FF; margin-left: 10px; font-size: 1.2em;';
             line1.appendChild(rvolSpan);
 
             // Indicators Line (Line 2)
             const line2 = document.createElement('div');
             line2.textContent = `RRS: ${s.rrs}, RVol: ${s.rvol}, ADR%: ${s.adr_pct}%`;
-            line2.style.fontSize = '0.9em';
+            line2.style.fontSize = '1.2em';
 
             // ATR% Multiple Line (Line 3)
             const line3 = document.createElement('div');
             line3.textContent = `ATR% Multiple from 50-MA: ${s.atr_multiple !== undefined ? s.atr_multiple : 'N/A'}`;
-            line3.style.fontSize = '0.9em';
+            line3.style.fontSize = '1.2em';
 
             item.appendChild(line1);
             item.appendChild(line2);
