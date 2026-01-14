@@ -63,6 +63,105 @@ def generate_market_chart(df, output_path):
     apds.append(mpf.make_addplot(y1_series, panel=0, color='r', alpha=0.0, secondary_y=False,
                      fill_between=dict(y1=y_max, y2=y_min, where=bear_mask, color='lightcoral', alpha=0.15)))
 
+    # --- Algo Line Analysis (Resistance & Support) ---
+    try:
+        # Use existing High/Low columns
+        h_high = df['High']
+        h_low = df['Low']
+        values_high = h_high.values
+        values_low = h_low.values
+
+        # Series for plotting (filled with NaNs initially)
+        high_line_series = pd.Series(np.nan, index=df.index)
+        low_line_series = pd.Series(np.nan, index=df.index)
+
+        # Config
+        left, right, count = 5, 5, 5
+        length = 150
+
+        # 1. High Pivots (Resistance)
+        high_pivots = []
+        for i in range(left, len(values_high) - right):
+            window = values_high[i-left : i+right+1]
+            if values_high[i] == np.max(window):
+                 high_pivots.append((i, values_high[i]))
+
+        recent_highs = high_pivots[-count:] if len(high_pivots) > count else high_pivots
+
+        if len(recent_highs) >= 2:
+            far_idx, far_val = recent_highs[0]
+            near_idx, near_val = recent_highs[-1]
+            diff = near_idx - far_idx
+            if diff != 0:
+                slope = (near_val - far_val) / diff
+                intercept = far_val - slope * far_idx
+
+                # Calculate coordinates for plotting
+                # We need to fill the series from x1 to x2
+                x2 = len(values_high) - 1
+                x1 = max(0, x2 - (length - 1))
+
+                # Fill the series
+                for x in range(x1, x2 + 1):
+                    y = slope * x + intercept
+                    if 0 <= x < len(df):
+                         high_line_series.iloc[x] = y
+
+        # 2. Low Pivots (Support)
+        low_pivots = []
+        for i in range(left, len(values_low) - right):
+            window = values_low[i-left : i+right+1]
+            if values_low[i] == np.min(window):
+                 low_pivots.append((i, values_low[i]))
+
+        recent_lows = low_pivots[-count:] if len(low_pivots) > count else low_pivots
+
+        if len(recent_lows) >= 2:
+            far_idx, far_val = recent_lows[0]
+            near_idx, near_val = recent_lows[-1]
+            diff = near_idx - far_idx
+            if diff != 0:
+                slope = (near_val - far_val) / diff
+                intercept = far_val - slope * far_idx
+
+                x2 = len(values_low) - 1
+                x1 = max(0, x2 - (length - 1))
+
+                for x in range(x1, x2 + 1):
+                    y = slope * x + intercept
+                    if 0 <= x < len(df):
+                         low_line_series.iloc[x] = y
+
+        # Add to plots
+        # Resistance
+        apds.append(mpf.make_addplot(high_line_series, panel=0, color='#ff7b00', linestyle='--', width=2))
+
+        # Support (with fill to Resistance)
+        # Note: mplfinance fill_between usually takes a value or another series.
+        # We can use the 'fill_between' argument of make_addplot if we have two series.
+        # However, make_addplot only supports fill_between dict with y1, y2, etc.
+        # Or we can use fill_between logic.
+        # Ideally, we want to fill between high_line_series and low_line_series.
+        # But they contain NaNs.
+
+        # To fill between two series with NaNs, we might need a workaround or accept simple lines if fill is complex.
+        # But the user requested "間にある部分を追加してください" (add the part between them).
+
+        # Let's try filling.
+        # Since 'fill_between' in make_addplot accepts a dict or value.
+        # Actually, make_addplot has a 'fill_between' parameter which is a dict or float?
+        # No, 'fill_between' argument in make_addplot is typically `dict(y1=..., y2=..., ...)`
+        # If we want to fill between the two series we just created:
+
+        # Since mpf handles NaNs by not plotting, we need to ensure the fill works.
+        # We can add a dummy plot for the fill or attach it to one of them.
+
+        apds.append(mpf.make_addplot(low_line_series, panel=0, color='#ff7b00', linestyle='--', width=2,
+                                     fill_between=dict(y1=high_line_series.values, y2=low_line_series.values, color='#ff7b00', alpha=0.1)))
+
+    except Exception as e:
+        logger.error(f"Error calculating algo lines: {e}")
+
     # Style
     mc = mpf.make_marketcolors(up='green', down='red', inherit=True)
     s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True)
@@ -74,10 +173,10 @@ def generate_market_chart(df, output_path):
             style=s,
             addplot=apds,
             volume=False,
-            panel_ratios=(3, 1, 1),
+            panel_ratios=(6, 1, 1),
             title="",
             returnfig=True,
-            figsize=(10, 8),
+            figsize=(10, 13),
             tight_layout=False,
         )
 
