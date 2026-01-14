@@ -138,7 +138,12 @@ class RealTimeRvolAnalyzer:
 
             # Volume Calculation
             tick_volume = 0
-            day_volume = msg.get('day_volume')
+            # day_volume and last_size come as strings from yfinance WebSocket
+            day_volume_str = msg.get('day_volume')
+            last_size_str = msg.get('last_size')
+
+            day_volume = int(day_volume_str) if day_volume_str is not None else None
+            last_size = int(last_size_str) if last_size_str is not None else 0
 
             if day_volume is not None:
                 if self.current_bar['last_day_volume'] is not None:
@@ -146,12 +151,12 @@ class RealTimeRvolAnalyzer:
                     if diff >= 0:
                         tick_volume = diff
                 else:
-                    # First packet, can't calc diff yet, fallback to lastSize
-                    tick_volume = msg.get('last_size', 0)
+                    # First packet, can't calc diff yet, fallback to last_size
+                    tick_volume = last_size
 
                 self.current_bar['last_day_volume'] = day_volume
             else:
-                tick_volume = msg.get('last_size', 0)
+                tick_volume = last_size
 
             # 5-min Bar Logic
             bar_start = self._get_bar_start_time(current_dt)
