@@ -134,19 +134,19 @@ def get_market_analysis_data(period="6mo"):
             if current_status == "Green":
                 status_color = "Green"
                 if prev_status == "Red":
-                    status_text = "Red to ●Green"
+                    status_text = "Red to Green"
                 elif prev_status == "Green":
-                    status_text = "still ●Green"
+                    status_text = "still Green"
                 else:
-                    status_text = "Start ●Green"
+                    status_text = "Start Green"
             elif current_status == "Red":
                 status_color = "Red"
                 if prev_status == "Green":
-                    status_text = "Green to ●Red"
+                    status_text = "Green to Red"
                 elif prev_status == "Red":
-                    status_text = "still ●Red"
+                    status_text = "still Red"
                 else:
-                    status_text = "Start ●Red"
+                    status_text = "Start Red"
             else:
                 status_text = "Neutral"
                 status_color = "Gray"
