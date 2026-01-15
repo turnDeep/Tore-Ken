@@ -621,8 +621,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const contrStr = m.contractions ? `[${m.contractions.join(', ')}]` : '[]';
                 const tightStr = m.is_tight ? 'Yes' : 'No';
                 const dryUpStr = m.is_dry_up ? 'Yes' : 'No';
-                const qualStr = m.vcp_qualified ? 'Yes' : 'No';
-                vcpText = `Contr: ${contrStr} | Tight: ${tightStr} | DryUp: ${dryUpStr} | Qual: ${qualStr}`;
+                const qualStr = m.vcp_qualified ? (m.qualified_date ? `Yes (${m.qualified_date.slice(5)})` : 'Yes') : 'No';
+                vcpText = `Contr: ${contrStr} | Tight: ${tightStr} | DryUp: ${dryUpStr} | Qual (5d): ${qualStr}`;
             }
             line4.textContent = vcpText;
             line4.style.fontSize = '1.2em';

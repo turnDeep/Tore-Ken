@@ -253,9 +253,10 @@ def calculate_anchored_vwap_252_high(df):
 
     return avwap_series
 
-def analyze_vcp_logic(df, pivots):
+def analyze_vcp_logic(df, pivots, lookback=5):
     """
     Analyzes VCP characteristics: Contraction, Tightness, Dry Up.
+    Checks the last `lookback` days for qualification to allow for breakout volume.
     Returns a dictionary of metrics.
     """
     vcp_metrics = {
@@ -265,68 +266,93 @@ def analyze_vcp_logic(df, pivots):
         'is_tight': False,
         'vol_vs_sma': 0.0,
         'is_dry_up': False,
-        'vcp_qualified': False
+        'vcp_qualified': False,
+        'qualified_date': None
     }
 
     if df is None or df.empty:
         return vcp_metrics
 
-    # 1. Contraction Analysis (Wave Depths)
+    # 1. Contraction Analysis (Wave Depths - Structural Check)
     contractions = []
     pivots_rev = list(reversed(pivots))
 
-    # Find High-Low pairs from most recent back
     for i in range(len(pivots_rev) - 1):
         p2 = pivots_rev[i]   # More recent
         p1 = pivots_rev[i+1] # Older
 
-        # We want High (p1) -> Low (p2)
         if p1['type'] == 'high' and p2['type'] == 'low':
             depth = (p2['price'] - p1['price']) / p1['price']
-            contractions.append(abs(depth)) # Store as positive magnitude
+            contractions.append(abs(depth))
 
-        if len(contractions) >= 4: # Analyze last 3-4 contractions
+        if len(contractions) >= 4:
             break
 
-    # Reverse to chronological order (Oldest -> Newest)
     contractions = list(reversed(contractions))
     vcp_metrics['contractions'] = [round(c * 100, 2) for c in contractions]
 
-    # Check if contractions are decreasing
     is_contracting = False
     if len(contractions) >= 2:
-        if contractions[-1] < max(contractions[:-1]) and contractions[-1] < 0.10: # Last one < 10%
+        if contractions[-1] < max(contractions[:-1]) and contractions[-1] < 0.10:
             is_contracting = True
     elif len(contractions) == 1:
-            if contractions[0] < 0.15: # Single base?
+            if contractions[0] < 0.15:
                 is_contracting = True
 
-    vcp_metrics['is_contracting'] = is_contracting
+    vcp_metrics['is_contracting'] = bool(is_contracting)
 
-    # 2. Tightness (Last 10 days)
-    # (High - Low) / Close rolling mean
-    df_sub = df.tail(20)
-    if not df_sub.empty:
-        hl_range = (df_sub['High'] - df_sub['Low']) / df_sub['Close']
-        if len(hl_range) >= 10:
-            recent_volatility = hl_range.rolling(window=10).mean().iloc[-1]
-            is_tight = recent_volatility < 0.04 # 4% threshold
-            vcp_metrics['tightness_val'] = round(recent_volatility * 100, 2)
-            vcp_metrics['is_tight'] = bool(is_tight)
+    # 2. Iterate Backwards through Lookback Window for Tightness/DryUp
+    # We want to see if it WAS valid VCP within the last few days (before the volume came in)
 
-    # 3. Volume Dry Up
-    if len(df) >= 50:
-        vol_sma50 = df['Volume'].rolling(window=50).mean().iloc[-1]
-        curr_vol = df['Volume'].iloc[-1]
-        is_dry_up = curr_vol < (vol_sma50 * 0.7) # 70% threshold
+    # Pre-calculate indicators needed for the window
+    # Tightness (10d volatility)
+    hl_range = (df['High'] - df['Low']) / df['Close']
+    rolling_tightness = hl_range.rolling(window=10).mean()
 
-        vcp_metrics['vol_vs_sma'] = round(curr_vol / vol_sma50, 2) if vol_sma50 > 0 else 0.0
-        vcp_metrics['is_dry_up'] = bool(is_dry_up)
+    # Dry Up (50d Vol SMA)
+    vol_sma50 = df['Volume'].rolling(window=50).mean()
 
-    # Overall VCP Score/Status
-    # Base criteria: Tightness + DryUp (Contraction is harder to be strict on automation)
-    # Trend is handled by screener logic already
-    vcp_metrics['vcp_qualified'] = (vcp_metrics['is_tight'] and vcp_metrics['is_dry_up'])
+    window_end = len(df)
+    window_start = max(0, window_end - lookback)
+
+    best_date = None
+    passed_any = False
+
+    # Last values for display (current state)
+    current_tightness = rolling_tightness.iloc[-1]
+    current_vol = df['Volume'].iloc[-1]
+    current_vol_sma = vol_sma50.iloc[-1]
+
+    vcp_metrics['tightness_val'] = float(round(current_tightness * 100, 2)) if pd.notna(current_tightness) else 0.0
+    vcp_metrics['vol_vs_sma'] = float(round(current_vol / current_vol_sma, 2)) if (pd.notna(current_vol_sma) and current_vol_sma > 0) else 0.0
+
+    # These booleans represent CURRENT state (which might be False if breakout occurring)
+    vcp_metrics['is_tight'] = bool(vcp_metrics['tightness_val'] < 4.0)
+    vcp_metrics['is_dry_up'] = bool(vcp_metrics['vol_vs_sma'] < 0.7)
+
+    # Loop back to find a qualifying day
+    for i in range(window_end - 1, window_start - 1, -1):
+        idx = df.index[i]
+
+        t_val = rolling_tightness.iloc[i]
+        v_val = df['Volume'].iloc[i]
+        sma_val = vol_sma50.iloc[i]
+
+        if pd.isna(t_val) or pd.isna(sma_val) or sma_val == 0:
+            continue
+
+        is_t = t_val < 0.04
+        is_d = v_val < (sma_val * 0.7)
+
+        if is_t and is_d:
+            passed_any = True
+            best_date = idx.strftime('%Y-%m-%d')
+            # If we find a match closest to today, we can stop or keep looking for 'best'.
+            # Stopping at most recent match is logical.
+            break
+
+    vcp_metrics['vcp_qualified'] = bool(passed_any)
+    vcp_metrics['qualified_date'] = best_date
 
     return vcp_metrics
 
