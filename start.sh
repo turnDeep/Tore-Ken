@@ -16,12 +16,26 @@ echo "Creating cron environment file at ${ENV_FILE}"
 printenv | sed 's/^\(.*\)$/export \1/g' > "${ENV_FILE}"
 chmod +x "${ENV_FILE}"
 
+# --- CRON CONFIGURATION START ---
+# Define the robust cron schedule.
+# 15 5,6: Target JST (Summer 05:15, Winter 06:15)
+# 15 20,21: Target UTC (Maps to 05:15, 06:15 JST) to handle potential timezone mismatch
+# * * *: Run every day. Logic in cron_scheduler.py handles Day-of-Week filtering (Tue-Sat JST).
+CRON_CMD="15 5,6,20,21 * * * . /app/backend/cron-env.sh && python /app/backend/cron_scheduler.py >> /app/logs/cron_error.log 2>&1"
+
+echo "Configuring crontab with robust schedule..."
+(
+    echo "SHELL=/bin/bash"
+    echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    echo "TZ=Asia/Tokyo"
+    echo ""
+    echo "$CRON_CMD"
+) | crontab -
+# --- CRON CONFIGURATION END ---
+
 # IMPORTANT: Ensure timezone is properly set before starting cron
 echo "Setting timezone to Asia/Tokyo..."
 export TZ=Asia/Tokyo
-# The dpkg-reconfigure command can hang in non-interactive environments.
-# The timezone is already set by the Dockerfile's ln command and the TZ env var.
-# dpkg-reconfigure -f noninteractive tzdata
 
 # Enable cron logging
 echo "Enabling cron logging..."
@@ -33,7 +47,7 @@ echo "Configuring cron for verbose logging..."
 sed -i 's/^#cron./cron./' /etc/rsyslog.d/50-default.conf 2>/dev/null || true
 
 echo "Starting cron daemon..."
-# Restart cron service to ensure it picks up timezone settings
+# Restart cron service to ensure it picks up timezone settings and new crontab
 service cron restart
 
 # Verify cron is running and jobs are loaded
@@ -45,14 +59,8 @@ date
 echo "Timezone file contents:"
 cat /etc/timezone
 
-echo "Cron jobs registered:"
+echo "Active Crontab:"
 crontab -l
-
-echo "Testing environment variable availability in cron context..."
-# Create a test to verify cron can access environment variables
-(crontab -l ; echo "* * * * * date >> /app/logs/cron_heartbeat.log 2>&1") | crontab -
-sleep 2
-(crontab -l | grep -v "cron_heartbeat" | crontab -) || true
 
 # Start cron log monitoring in background (for debugging)
 echo "Starting log monitoring..."
