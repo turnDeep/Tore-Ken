@@ -205,7 +205,7 @@ def generate_market_chart(df, output_path):
         logger.error(f"Error generating market chart: {e}")
         return False
 
-def generate_stock_chart(df, output_path, ticker):
+def generate_stock_chart(df, output_path, ticker, vcp_data=None):
     """
     Generates a static image of a stock chart (Strong Stock) using mplfinance.
     Adapts logic from RDT-system/chart_generator.py.
@@ -237,6 +237,14 @@ def generate_stock_chart(df, output_path, ticker):
 
     # Prepare AddPlots
     apds = []
+
+    # --- Panel 0: VCP Overlays (AVWAP) ---
+    if vcp_data and 'avwap' in vcp_data:
+        avwap_series = vcp_data['avwap']
+        # Align with plot_df
+        if isinstance(avwap_series, pd.Series):
+             avwap_plot = avwap_series.reindex(plot_df.index)
+             apds.append(mpf.make_addplot(avwap_plot, panel=0, color='purple', width=1.5))
 
     # --- Panel 1: RRS (Real Relative Strength) ---
     if 'RRS' in plot_df.columns:
@@ -277,6 +285,36 @@ def generate_stock_chart(df, output_path, ticker):
             scale_padding={'left': 0.1, 'top': 0.1, 'right': 1.0, 'bottom': 0.1},
             tight_layout=True
         )
+
+        # --- Plot ZigZag Manually ---
+        if vcp_data and 'pivots' in vcp_data:
+            pivots = vcp_data['pivots']
+            date_to_idx = {date: i for i, date in enumerate(plot_df.index)}
+
+            zigzag_x = []
+            zigzag_y = []
+
+            display_pivots = [p for p in pivots if p['date'] >= plot_df.index[0]]
+            prior_pivots = [p for p in pivots if p['date'] < plot_df.index[0]]
+            if prior_pivots:
+                display_pivots.insert(0, prior_pivots[-1])
+
+            for i in range(len(display_pivots) - 1):
+                p1 = display_pivots[i]
+                p2 = display_pivots[i+1]
+
+                idx1 = date_to_idx.get(p1['date'], 0 if p1['date'] < plot_df.index[0] else None)
+                idx2 = date_to_idx.get(p2['date'])
+
+                if idx1 is not None and idx2 is not None:
+                    if not zigzag_x or zigzag_x[-1] != idx1:
+                        zigzag_x.append(idx1)
+                        zigzag_y.append(p1['price'])
+                    zigzag_x.append(idx2)
+                    zigzag_y.append(p2['price'])
+
+            if zigzag_x:
+                axes[0].plot(zigzag_x, zigzag_y, color='blue', marker='o', linestyle='-', linewidth=1.0, markersize=3, alpha=0.7)
 
         # Set Title
         axes[0].set_title(f'{ticker} - D1', loc='left', fontsize=12)
