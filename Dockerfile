@@ -38,12 +38,14 @@ RUN chmod +x /app/backend/run_job.sh
 
 # Add cron job with explicit timezone
 # Important: Include TZ in the crontab itself
+# Updated schedule: 5,6 (JST) and 20,21 (UTC mapping to JST) for robustness.
+# Runs every day (* * *), logic handled by python script.
 RUN ( \
     echo "SHELL=/bin/bash" ; \
     echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" ; \
     echo "TZ=Asia/Tokyo" ; \
     echo "" ; \
-    echo "15 5,6 * * 1-5 . /app/backend/cron-env.sh && python /app/backend/cron_scheduler.py >> /app/logs/cron_error.log 2>&1" \
+    echo "15 5,6,20,21 * * * . /app/backend/cron-env.sh && python /app/backend/cron_scheduler.py >> /app/logs/cron_error.log 2>&1" \
 ) | crontab -
 
 # Create logs directory
