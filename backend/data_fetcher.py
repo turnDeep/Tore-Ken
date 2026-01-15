@@ -176,6 +176,7 @@ def fetch_and_notify():
         # Pass DATA_DIR and date_key to enable chart generation
         strong_stocks = run_screener_for_tickers(tickers, spy_df, data_dir=DATA_DIR, date_key=latest_date_key)
 
+
     logger.info(f"Screener complete. Found {len(strong_stocks)} strong stocks.")
 
     # Save Daily JSON (Latest)
