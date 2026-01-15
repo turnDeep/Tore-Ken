@@ -613,9 +613,25 @@ document.addEventListener('DOMContentLoaded', () => {
             line3.textContent = `ATR% Multiple from 50-MA: ${s.atr_multiple !== undefined ? s.atr_multiple : 'N/A'}`;
             line3.style.fontSize = '1.2em';
 
+            // VCP Metrics Line (Line 4)
+            const line4 = document.createElement('div');
+            let vcpText = 'VCP Data: N/A';
+            if (s.vcp_metrics) {
+                const m = s.vcp_metrics;
+                const contrStr = m.contractions ? `[${m.contractions.join(', ')}]` : '[]';
+                const tightStr = m.is_tight ? 'Yes' : 'No';
+                const dryUpStr = m.is_dry_up ? 'Yes' : 'No';
+                const qualStr = m.vcp_qualified ? (m.qualified_date ? `Yes (${m.qualified_date.slice(5)})` : 'Yes') : 'No';
+                vcpText = `Contr: ${contrStr} | Tight: ${tightStr} | DryUp: ${dryUpStr} | Qual (5d): ${qualStr}`;
+            }
+            line4.textContent = vcpText;
+            line4.style.fontSize = '1.2em';
+            line4.style.color = '#333';
+
             item.appendChild(line1);
             item.appendChild(line2);
             item.appendChild(line3);
+            item.appendChild(line4);
 
             // Chart Container (Hidden by default)
             const chartContainer = document.createElement('div');
