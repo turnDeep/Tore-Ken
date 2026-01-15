@@ -83,9 +83,29 @@ def generate_volume_profile(ticker: str, lookback_days: int = 20) -> pd.DataFram
         today_et = datetime.now(pytz.timezone('US/Eastern')).date()
         df_history = df[df.index.date < today_et].copy()
 
-        # Group by Time and calculate Median
+        # Fetch Daily Data for Scaling (Same period)
+        # We need the exact dates present in 5m history to ensure Apple-to-Apple comparison.
+        try:
+            # Re-use start_date, but fetch daily
+            df_daily = yf.download(ticker, start=start_date, interval="1d", progress=False)
+            if isinstance(df_daily.columns, pd.MultiIndex):
+                df_daily.columns = df_daily.columns.get_level_values(0)
+
+            # Filter for the same historical window (strictly < today)
+            df_daily = df_daily[df_daily.index.date < today_et]
+
+            # Align start date to the actual 5m data start to match the window
+            if not df_history.empty:
+                min_date = df_history.index.date.min()
+                df_daily = df_daily[df_daily.index.date >= min_date]
+
+        except Exception as e:
+            logger.warning(f"[{ticker}] Error fetching daily data for scaling: {e}")
+            df_daily = pd.DataFrame()
+
+        # Group by Time and calculate MEAN (instead of Median)
         df_history['Time'] = df_history.index.time
-        profile = df_history.groupby('Time')['Volume'].median()
+        profile = df_history.groupby('Time')['Volume'].mean()
         profile_df = profile.to_frame(name='AvgVolume')
 
         # Reindex to ensure full market day coverage (9:30 to 15:55 for 5m bars)
@@ -99,13 +119,18 @@ def generate_volume_profile(ticker: str, lookback_days: int = 20) -> pd.DataFram
         profile_df = profile_df.reindex(market_times, fill_value=0)
 
         # Calculate Cumulative Volume
-        # CumVolume at row T implies total average volume accumulated by the END of T's interval?
-        # Standard convention: The bar at 9:30 covers 9:30-9:35.
-        # So 'CumVolume' at 9:30 row should probably be the volume accumulated UP TO 9:35.
-        # Let's define: CumVolume[T] = Sum(AvgVolume) from 9:30 up to and including T.
-        # So CumVolume[9:30] = AvgVolume[9:30].
-        # CumVolume[9:35] = AvgVolume[9:30] + AvgVolume[9:35].
         profile_df['CumVolume'] = profile_df['AvgVolume'].cumsum()
+
+        # Apply Scaling if Daily Data is available
+        if not df_daily.empty:
+            daily_mean = df_daily['Volume'].mean()
+            profile_sum = profile_df['AvgVolume'].sum()
+
+            if profile_sum > 0:
+                scale_factor = daily_mean / profile_sum
+                logger.info(f"[{ticker}] Applying scale factor: {scale_factor:.4f} (Daily: {daily_mean:.0f} / Profile: {profile_sum:.0f})")
+                profile_df['AvgVolume'] = profile_df['AvgVolume'] * scale_factor
+                profile_df['CumVolume'] = profile_df['AvgVolume'].cumsum()
 
         logger.info(f"[{ticker}] Baseline generated with {len(profile_df)} slots.")
         return profile_df
@@ -214,8 +239,14 @@ class RealTimeRvolAnalyzer:
             expected_total_vol = base_accumulated_vol + current_bar_expected
 
             # 3. Calculate Ratio
+            # To match Screener RVol (Volume / SMA20), we need to include the current day's volume in the average.
+            # Screener Denominator = (Sum_Past_19_Days + Current_Day) / 20.
+            # expected_total_vol represents the Average of Past N Days (where N=20).
+            # We approximate Sum_Past_19_Days as 19 * expected_total_vol.
+
             if expected_total_vol > 0:
-                self.current_rvol = self.current_day_volume / expected_total_vol
+                adjusted_baseline = (19 * expected_total_vol + self.current_day_volume) / 20.0
+                self.current_rvol = self.current_day_volume / adjusted_baseline
             else:
                 self.current_rvol = 0.0
 
