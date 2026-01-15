@@ -6,6 +6,7 @@ import datetime
 import os
 from backend.screener_logic import RDTIndicators
 from backend.chart_generator import generate_stock_chart
+from scipy.signal import argrelextrema
 
 def calculate_wma(series, length):
     """Calculates Weighted Moving Average (WMA)."""
@@ -171,6 +172,164 @@ def get_market_analysis_data(period="6mo"):
         print(f"Error in get_market_analysis_data: {e}")
         return None, None
 
+def calculate_zigzag_scipy(df, order=5):
+    """
+    Calculates ZigZag pivots using scipy.signal.argrelextrema.
+    Returns a list of dictionaries: [{'idx': idx, 'date': date, 'price': price, 'type': 'high'/'low'}, ...]
+    """
+    if df is None or df.empty:
+        return []
+
+    # 1. Find local maxs and mins
+    highs = df['High'].values
+    lows = df['Low'].values
+    dates = df.index
+
+    # Find indexes of local extrema
+    high_idxs = argrelextrema(highs, np.greater, order=order)[0]
+    low_idxs = argrelextrema(lows, np.less, order=order)[0]
+
+    candidates = []
+    for idx in high_idxs:
+        candidates.append({'idx': idx, 'date': dates[idx], 'price': highs[idx], 'type': 'high'})
+    for idx in low_idxs:
+        candidates.append({'idx': idx, 'date': dates[idx], 'price': lows[idx], 'type': 'low'})
+
+    candidates.sort(key=lambda x: x['idx'])
+
+    if not candidates:
+        return []
+
+    # 2. Filter for Alternating High/Low (ZigZag Logic)
+    stack = [candidates[0]]
+
+    for current in candidates[1:]:
+        last = stack[-1]
+
+        if last['type'] == current['type']:
+            if last['type'] == 'high':
+                if current['price'] > last['price']:
+                    stack.pop()
+                    stack.append(current)
+            else:
+                if current['price'] < last['price']:
+                    stack.pop()
+                    stack.append(current)
+        else:
+            stack.append(current)
+
+    return stack
+
+def calculate_anchored_vwap_252_high(df):
+    """
+    Calculates AVWAP anchored to the highest high of the last 252 days.
+    Uses OHLC4 as input price.
+    Returns a pandas Series (avwap).
+    """
+    if df is None or len(df) < 1:
+        return None
+
+    # 1. OHLC4 Calculation
+    average_price = (df['Open'] + df['High'] + df['Low'] + df['Close']) / 4
+    pv = average_price * df['Volume']
+
+    # 2. Identify Anchor (Highest High in last 252 days relative to end of data)
+    # We find the max high in the last 252 rows (or less if not enough data).
+    lookback = min(252, len(df))
+    last_window = df.tail(lookback)
+    anchor_idx = last_window['High'].idxmax()
+
+    # 3. Calculate AVWAP from anchor
+    # Create a mask for data from anchor onwards
+    mask = df.index >= anchor_idx
+
+    cum_pv = pv[mask].cumsum()
+    cum_vol = df['Volume'][mask].cumsum()
+
+    avwap = cum_pv / cum_vol
+
+    # Reindex to match original df, filling pre-anchor with NaN
+    avwap_series = avwap.reindex(df.index)
+
+    return avwap_series
+
+def analyze_vcp_logic(df, pivots):
+    """
+    Analyzes VCP characteristics: Contraction, Tightness, Dry Up.
+    Returns a dictionary of metrics.
+    """
+    vcp_metrics = {
+        'contractions': [],
+        'is_contracting': False,
+        'tightness_val': 0.0,
+        'is_tight': False,
+        'vol_vs_sma': 0.0,
+        'is_dry_up': False,
+        'vcp_qualified': False
+    }
+
+    if df is None or df.empty:
+        return vcp_metrics
+
+    # 1. Contraction Analysis (Wave Depths)
+    contractions = []
+    pivots_rev = list(reversed(pivots))
+
+    # Find High-Low pairs from most recent back
+    for i in range(len(pivots_rev) - 1):
+        p2 = pivots_rev[i]   # More recent
+        p1 = pivots_rev[i+1] # Older
+
+        # We want High (p1) -> Low (p2)
+        if p1['type'] == 'high' and p2['type'] == 'low':
+            depth = (p2['price'] - p1['price']) / p1['price']
+            contractions.append(abs(depth)) # Store as positive magnitude
+
+        if len(contractions) >= 4: # Analyze last 3-4 contractions
+            break
+
+    # Reverse to chronological order (Oldest -> Newest)
+    contractions = list(reversed(contractions))
+    vcp_metrics['contractions'] = [round(c * 100, 2) for c in contractions]
+
+    # Check if contractions are decreasing
+    is_contracting = False
+    if len(contractions) >= 2:
+        if contractions[-1] < max(contractions[:-1]) and contractions[-1] < 0.10: # Last one < 10%
+            is_contracting = True
+    elif len(contractions) == 1:
+            if contractions[0] < 0.15: # Single base?
+                is_contracting = True
+
+    vcp_metrics['is_contracting'] = is_contracting
+
+    # 2. Tightness (Last 10 days)
+    # (High - Low) / Close rolling mean
+    df_sub = df.tail(20)
+    if not df_sub.empty:
+        hl_range = (df_sub['High'] - df_sub['Low']) / df_sub['Close']
+        if len(hl_range) >= 10:
+            recent_volatility = hl_range.rolling(window=10).mean().iloc[-1]
+            is_tight = recent_volatility < 0.04 # 4% threshold
+            vcp_metrics['tightness_val'] = round(recent_volatility * 100, 2)
+            vcp_metrics['is_tight'] = bool(is_tight)
+
+    # 3. Volume Dry Up
+    if len(df) >= 50:
+        vol_sma50 = df['Volume'].rolling(window=50).mean().iloc[-1]
+        curr_vol = df['Volume'].iloc[-1]
+        is_dry_up = curr_vol < (vol_sma50 * 0.7) # 70% threshold
+
+        vcp_metrics['vol_vs_sma'] = round(curr_vol / vol_sma50, 2) if vol_sma50 > 0 else 0.0
+        vcp_metrics['is_dry_up'] = bool(is_dry_up)
+
+    # Overall VCP Score/Status
+    # Base criteria: Tightness + DryUp (Contraction is harder to be strict on automation)
+    # Trend is handled by screener logic already
+    vcp_metrics['vcp_qualified'] = (vcp_metrics['is_tight'] and vcp_metrics['is_dry_up'])
+
+    return vcp_metrics
+
 def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, target_date=None):
     """
     Runs the RDT screener for a list of tickers against the SPY dataframe.
@@ -205,7 +364,10 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
             for ticker in chunk:
                 try:
                     if len(chunk) == 1:
-                        df = data
+                        if isinstance(data.columns, pd.MultiIndex):
+                             df = data[ticker]
+                        else:
+                             df = data
                     else:
                         if ticker not in data.columns.levels[0]:
                             continue
@@ -253,19 +415,31 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
                     check_res = RDTIndicators.check_filters(last_row)
 
                     if check_res['All_Pass']:
+                        # --- Calculate VCP Metrics and Plot Data ---
+                        pivots = calculate_zigzag_scipy(df_calc, order=5)
+                        avwap = calculate_anchored_vwap_252_high(df_calc)
+                        vcp_metrics = analyze_vcp_logic(df_calc, pivots)
+
+                        vcp_data = {
+                            'pivots': pivots,
+                            'avwap': avwap
+                        }
+
                         stock_info = {
                             "ticker": ticker,
                             "rrs": round(last_row['RRS'], 2),
                             "rvol": round(last_row['RVol'], 2),
                             "adr_pct": round(last_row['ADR_Percent'], 2),
-                            "atr_multiple": round(last_row['ATR_Multiple_50MA'], 2)
+                            "atr_multiple": round(last_row['ATR_Multiple_50MA'], 2),
+                            "vcp_metrics": vcp_metrics  # Save metrics to JSON
                         }
 
                         # Generate Chart
                         if data_dir and date_key:
                             chart_filename = f"{date_key}-{ticker}.png"
                             chart_path = os.path.join(data_dir, chart_filename)
-                            if generate_stock_chart(df_calc, chart_path, ticker):
+                            # Pass vcp_data to chart generator
+                            if generate_stock_chart(df_calc, chart_path, ticker, vcp_data=vcp_data):
                                 stock_info["chart_image"] = chart_filename
 
                         strong_stocks.append(stock_info)
