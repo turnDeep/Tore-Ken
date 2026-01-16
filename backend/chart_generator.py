@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import logging
-import trendln
+from scipy.signal import argrelextrema
 
 logger = logging.getLogger(__name__)
 
@@ -264,29 +264,76 @@ def generate_stock_chart(df, output_path, ticker, vcp_data=None):
         left, right, count = 5, 5, 5
         length = 150
 
-        # --- 1. Resistance (Using trendln) ---
+        # --- 1. Resistance (ZigZag-based Upper Hull with Breakout detection) ---
         try:
-            # calc_support_resistance(h, accuracy=8) returns (support, resistance) tuple of tuples
-            # resistance tuple = (maximaIdxs, pmax, maxtrend, maxwindows)
-            # maxtrend is list of trendlines
-            result = trendln.calc_support_resistance(values_high, accuracy=8)
-            res_data = result[1]
-            maxtrend = res_data[2]
+            # 1. Find Pivots using scipy argrelextrema (order=5)
+            high_idxs = argrelextrema(values_high, np.greater, order=5)[0]
 
-            if len(maxtrend) > 0:
-                best_line = maxtrend[0] # Best trendline sorted by default
-                slope_intercept = best_line[1]
-                slope = slope_intercept[0]
-                intercept = slope_intercept[1]
+            if len(high_idxs) >= 2:
+                best_line = None
+                max_score = -1.0
 
-                # Plot for the range we want (e.g. last 'length' days or full visible)
-                # Let's plot for visible range
-                for x in range(len(plot_df)):
-                    y = slope * x + intercept
-                    if 0 <= x < len(plot_df):
-                         high_line_series.iloc[x] = y
-        except Exception as e_trend:
-            logger.warning(f"trendln failed for {ticker}: {e_trend}. Falling back to manual method is not implemented.")
+                # Iterate through all pairs of pivots to find the most significant valid trendline
+                for i in range(len(high_idxs) - 1):
+                    p1_idx = high_idxs[i]
+                    p1_val = values_high[p1_idx]
+
+                    for j in range(i + 1, len(high_idxs)):
+                        p2_idx = high_idxs[j]
+                        p2_val = values_high[p2_idx]
+
+                        # Calculate Line
+                        run = p2_idx - p1_idx
+                        if run == 0: continue
+                        slope = (p2_val - p1_val) / run
+                        intercept = p1_val - slope * p1_idx
+
+                        def line_func(x):
+                            return slope * x + intercept
+
+                        # Check Validity ONLY between p1 and p2 (The hull segment)
+                        # Use slight tolerance for "on the line" points
+                        segment_valid = True
+                        for k in range(p1_idx + 1, p2_idx):
+                            if values_high[k] > line_func(k) * 1.005:
+                                segment_valid = False
+                                break
+
+                        if segment_valid:
+                            # Calculate Score: Duration until broken
+                            # Check extension after p2
+                            break_idx = len(values_high) # Default: never broken
+                            for k in range(p2_idx + 1, len(values_high)):
+                                if values_high[k] > line_func(k) * 1.005:
+                                    break_idx = k
+                                    break
+
+                            duration = break_idx - p1_idx
+
+                            # Heuristic: Prefer lines that start from higher highs (Major Peaks)
+                            # and have longer duration.
+                            # Score = Duration * (P1_Value / Max_High) ?
+                            # Or just Duration, but if durations are close, prefer higher start?
+                            # For the Form case, Oct 30 is the Highest High in that context.
+                            # So P1=Oct 30 should win.
+
+                            score = duration
+
+                            if score > max_score:
+                                max_score = score
+                                best_line = (slope, intercept)
+
+                if best_line:
+                    slope, intercept = best_line
+                    # Plot the line across the whole chart
+                    for x in range(len(plot_df)):
+                        y = slope * x + intercept
+                        if 0 <= x < len(plot_df):
+                             high_line_series.iloc[x] = y
+
+        except Exception as e_res:
+            logger.warning(f"ZigZag resistance logic failed: {e_res}")
+
 
         # --- 2. Support (Manual Low Pivots - As requested to keep) ---
         low_pivots = []
@@ -314,9 +361,17 @@ def generate_stock_chart(df, output_path, ticker, vcp_data=None):
                          low_line_series.iloc[x] = y
 
         # Add to plots
-        apds.append(mpf.make_addplot(high_line_series, panel=0, color='#ff7b00', linestyle='--', width=2))
-        apds.append(mpf.make_addplot(low_line_series, panel=0, color='#ff7b00', linestyle='--', width=2,
-                                     fill_between=dict(y1=high_line_series.values, y2=low_line_series.values, color='#ff7b00', alpha=0.1)))
+        # Check if we have valid data to avoid mpf errors on all-NaN series
+        if not high_line_series.dropna().empty:
+             apds.append(mpf.make_addplot(high_line_series, panel=0, color='#ff7b00', linestyle='--', width=2))
+
+        if not low_line_series.dropna().empty:
+             # If both exist, we can fill
+             if not high_line_series.dropna().empty:
+                 apds.append(mpf.make_addplot(low_line_series, panel=0, color='#ff7b00', linestyle='--', width=2,
+                                         fill_between=dict(y1=high_line_series.values, y2=low_line_series.values, color='#ff7b00', alpha=0.1)))
+             else:
+                 apds.append(mpf.make_addplot(low_line_series, panel=0, color='#ff7b00', linestyle='--', width=2))
 
     except Exception as e:
         logger.error(f"Error calculating algo lines for {ticker}: {e}")
