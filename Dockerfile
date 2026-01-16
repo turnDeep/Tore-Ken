@@ -21,6 +21,12 @@ RUN apt-get update && apt-get install -y \
 # Configure timezone properly for cron
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# Fix potential PAM issue with cron in Docker
+# This is a common issue where cron fails silently because of pam_loginuid.so
+RUN if [ -f /etc/pam.d/cron ]; then \
+    sed -i '/session    required     pam_loginuid.so/c\#session    required     pam_loginuid.so' /etc/pam.d/cron; \
+    fi
+
 # Copy backend requirements and install Python packages.
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
