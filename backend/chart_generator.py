@@ -266,6 +266,82 @@ def generate_stock_chart(df, output_path, ticker, vcp_data=None):
         apds.append(mpf.make_addplot(plot_df['RVol'], panel=2, color='blue', width=1.2, secondary_y=True, ylabel='RVol'))
         apds.append(mpf.make_addplot(rvol_line, panel=2, color='gray', linestyle='--', width=0.8, secondary_y=True))
 
+    # --- Algo Line Analysis (Resistance & Support) ---
+    try:
+        # Use plot_df High/Low columns
+        h_high = plot_df['High']
+        h_low = plot_df['Low']
+        values_high = h_high.values
+        values_low = h_low.values
+
+        # Series for plotting (filled with NaNs initially)
+        high_line_series = pd.Series(np.nan, index=plot_df.index)
+        low_line_series = pd.Series(np.nan, index=plot_df.index)
+
+        # Config
+        left, right, count = 5, 5, 5
+        length = 150
+
+        # 1. High Pivots (Resistance)
+        high_pivots = []
+        for i in range(left, len(values_high) - right):
+            window = values_high[i-left : i+right+1]
+            if values_high[i] == np.max(window):
+                 high_pivots.append((i, values_high[i]))
+
+        recent_highs = high_pivots[-count:] if len(high_pivots) > count else high_pivots
+
+        if len(recent_highs) >= 2:
+            far_idx, far_val = recent_highs[0]
+            near_idx, near_val = recent_highs[-1]
+            diff = near_idx - far_idx
+            if diff != 0:
+                slope = (near_val - far_val) / diff
+                intercept = far_val - slope * far_idx
+
+                # Calculate coordinates for plotting
+                x2 = len(values_high) - 1
+                x1 = max(0, x2 - (length - 1))
+
+                # Fill the series
+                for x in range(x1, x2 + 1):
+                    y = slope * x + intercept
+                    if 0 <= x < len(plot_df):
+                         high_line_series.iloc[x] = y
+
+        # 2. Low Pivots (Support)
+        low_pivots = []
+        for i in range(left, len(values_low) - right):
+            window = values_low[i-left : i+right+1]
+            if values_low[i] == np.min(window):
+                 low_pivots.append((i, values_low[i]))
+
+        recent_lows = low_pivots[-count:] if len(low_pivots) > count else low_pivots
+
+        if len(recent_lows) >= 2:
+            far_idx, far_val = recent_lows[0]
+            near_idx, near_val = recent_lows[-1]
+            diff = near_idx - far_idx
+            if diff != 0:
+                slope = (near_val - far_val) / diff
+                intercept = far_val - slope * far_idx
+
+                x2 = len(values_low) - 1
+                x1 = max(0, x2 - (length - 1))
+
+                for x in range(x1, x2 + 1):
+                    y = slope * x + intercept
+                    if 0 <= x < len(plot_df):
+                         low_line_series.iloc[x] = y
+
+        # Add to plots
+        apds.append(mpf.make_addplot(high_line_series, panel=0, color='#ff7b00', linestyle='--', width=2))
+        apds.append(mpf.make_addplot(low_line_series, panel=0, color='#ff7b00', linestyle='--', width=2,
+                                     fill_between=dict(y1=high_line_series.values, y2=low_line_series.values, color='#ff7b00', alpha=0.1)))
+
+    except Exception as e:
+        logger.error(f"Error calculating algo lines for {ticker}: {e}")
+
     # Styling
     mc = mpf.make_marketcolors(up='green', down='red', edge='inherit', wick='inherit', volume='inherit')
     s = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=True, facecolor='white')
