@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import logging
+import trendln
 
 logger = logging.getLogger(__name__)
 
@@ -137,25 +138,6 @@ def generate_market_chart(df, output_path):
         apds.append(mpf.make_addplot(high_line_series, panel=0, color='#ff7b00', linestyle='--', width=2))
 
         # Support (with fill to Resistance)
-        # Note: mplfinance fill_between usually takes a value or another series.
-        # We can use the 'fill_between' argument of make_addplot if we have two series.
-        # However, make_addplot only supports fill_between dict with y1, y2, etc.
-        # Or we can use fill_between logic.
-        # Ideally, we want to fill between high_line_series and low_line_series.
-        # But they contain NaNs.
-
-        # To fill between two series with NaNs, we might need a workaround or accept simple lines if fill is complex.
-        # But the user requested "間にある部分を追加してください" (add the part between them).
-
-        # Let's try filling.
-        # Since 'fill_between' in make_addplot accepts a dict or value.
-        # Actually, make_addplot has a 'fill_between' parameter which is a dict or float?
-        # No, 'fill_between' argument in make_addplot is typically `dict(y1=..., y2=..., ...)`
-        # If we want to fill between the two series we just created:
-
-        # Since mpf handles NaNs by not plotting, we need to ensure the fill works.
-        # We can add a dummy plot for the fill or attach it to one of them.
-
         apds.append(mpf.make_addplot(low_line_series, panel=0, color='#ff7b00', linestyle='--', width=2,
                                      fill_between=dict(y1=high_line_series.values, y2=low_line_series.values, color='#ff7b00', alpha=0.1)))
 
@@ -282,34 +264,31 @@ def generate_stock_chart(df, output_path, ticker, vcp_data=None):
         left, right, count = 5, 5, 5
         length = 150
 
-        # 1. High Pivots (Resistance)
-        high_pivots = []
-        for i in range(left, len(values_high) - right):
-            window = values_high[i-left : i+right+1]
-            if values_high[i] == np.max(window):
-                 high_pivots.append((i, values_high[i]))
+        # --- 1. Resistance (Using trendln) ---
+        try:
+            # calc_support_resistance(h, accuracy=8) returns (support, resistance) tuple of tuples
+            # resistance tuple = (maximaIdxs, pmax, maxtrend, maxwindows)
+            # maxtrend is list of trendlines
+            result = trendln.calc_support_resistance(values_high, accuracy=8)
+            res_data = result[1]
+            maxtrend = res_data[2]
 
-        recent_highs = high_pivots[-count:] if len(high_pivots) > count else high_pivots
+            if len(maxtrend) > 0:
+                best_line = maxtrend[0] # Best trendline sorted by default
+                slope_intercept = best_line[1]
+                slope = slope_intercept[0]
+                intercept = slope_intercept[1]
 
-        if len(recent_highs) >= 2:
-            far_idx, far_val = recent_highs[0]
-            near_idx, near_val = recent_highs[-1]
-            diff = near_idx - far_idx
-            if diff != 0:
-                slope = (near_val - far_val) / diff
-                intercept = far_val - slope * far_idx
-
-                # Calculate coordinates for plotting
-                x2 = len(values_high) - 1
-                x1 = max(0, x2 - (length - 1))
-
-                # Fill the series
-                for x in range(x1, x2 + 1):
+                # Plot for the range we want (e.g. last 'length' days or full visible)
+                # Let's plot for visible range
+                for x in range(len(plot_df)):
                     y = slope * x + intercept
                     if 0 <= x < len(plot_df):
                          high_line_series.iloc[x] = y
+        except Exception as e_trend:
+            logger.warning(f"trendln failed for {ticker}: {e_trend}. Falling back to manual method is not implemented.")
 
-        # 2. Low Pivots (Support)
+        # --- 2. Support (Manual Low Pivots - As requested to keep) ---
         low_pivots = []
         for i in range(left, len(values_low) - right):
             window = values_low[i-left : i+right+1]
