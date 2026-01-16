@@ -10,3 +10,7 @@ __pycache__/
 
 # Ignore log files
 *.log
+
+# Explicitly track generated verification images
+!backend/FORM_2026-01-02.png
+!backend/FORM_2026-01-15.png
