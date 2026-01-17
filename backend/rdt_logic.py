@@ -372,6 +372,17 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
         else:
              target_dt = target_date
 
+    # Determine reference date for data freshness check
+    # If target_date is set, we check freshness against that.
+    # Otherwise, we check against the latest available market date (from spy_df).
+    reference_dt = target_dt
+    if reference_dt is None and spy_df is not None and not spy_df.empty:
+        # Assuming spy_df index is DatetimeIndex and sorted
+        reference_dt = spy_df.index[-1]
+        # Ensure it is timezone-naive to match stock data (which we set ignore_tz=True)
+        if reference_dt.tz is not None:
+             reference_dt = reference_dt.tz_localize(None)
+
     try:
         # Fetch 1y data to ensure we have enough for 200 SMA
         # Note: If target_date is far in the past, "1y" from now might not be enough context for that date.
@@ -432,10 +443,16 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
 
                     # Verify the last row date matches target_date (or is the closest trading day)
                     # If backfilling, we want the state AT that date.
-                    if target_dt:
+                    # Also applies to current date: check against market reference to filter delisted stocks.
+                    if reference_dt:
                         row_date = last_row.name
-                        # If the last available data is older than target date by too much (e.g. > 5 days), skip
-                        if (target_dt - row_date).days > 5:
+                        # Ensure row_date is tz-naive
+                        if hasattr(row_date, 'tz') and row_date.tz is not None:
+                             row_date = row_date.tz_localize(None)
+
+                        # If the last available data is older than reference date by too much (e.g. > 5 days), skip
+                        # This filters out delisted stocks (like HOUS) or stale data.
+                        if (reference_dt - row_date).days > 5:
                             continue
 
                     check_res = RDTIndicators.check_filters(last_row)
