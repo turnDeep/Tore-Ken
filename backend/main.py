@@ -64,7 +64,8 @@ URA_PIN = os.getenv("URA_PIN") # URA_PINを追加
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_DAYS", 30))
 NOTIFICATION_TOKEN_NAME = "notification_token"
-NOTIFICATION_TOKEN_EXPIRE_HOURS = 24  # 24時間（短期で問題ない）
+# 通知用トークンもメイン認証と同じ期間有効にする（画像読み込み401エラー防止）
+NOTIFICATION_TOKEN_EXPIRE_HOURS = 24 * ACCESS_TOKEN_EXPIRE_DAYS
 
 
 # In-memory storage for subscriptions
@@ -256,7 +257,8 @@ def get_market_chart(current_user: str = Depends(get_current_user_for_notificati
 def get_stock_chart(filename: str, current_user: str = Depends(get_current_user_for_notification)):
     """Returns a specific stock chart image (e.g., YYYYMMDD-TICKER.png). Allows cookie auth."""
     # Validate filename to prevent path traversal
-    if not re.match(r'^[\w\-\.]+\.png$', filename):
+    # Allowed: alphanumeric, underscore, hyphen, dot, and caret (^) for specific tickers
+    if not re.match(r'^[\w\-\.\^]+\.png$', filename):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     path = os.path.join(DATA_DIR, filename)
