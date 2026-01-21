@@ -1,6 +1,6 @@
 #!/bin/bash
 # This script is the entrypoint for the Docker container.
-# It starts the cron daemon and the uvicorn server.
+# It starts the uvicorn server.
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
@@ -8,63 +8,12 @@ set -e
 # Create logs directory if not exists
 mkdir -p /app/logs
 
-# Define the location for the cron environment file
-ENV_FILE="/app/backend/cron-env.sh"
-
-echo "Creating cron environment file at ${ENV_FILE}"
-# Create a shell script that exports all current environment variables.
-printenv | sed 's/^\(.*\)$/export \1/g' > "${ENV_FILE}"
-chmod +x "${ENV_FILE}"
-
-# --- CRON CONFIGURATION START ---
-# Define the robust cron schedule.
-# 15 5,6: Target JST (Summer 05:15, Winter 06:15)
-# 15 20,21: Target UTC (Maps to 05:15, 06:15 JST) to handle potential timezone mismatch
-# * * *: Run every day. Logic in cron_scheduler.py handles Day-of-Week filtering (Tue-Sat JST).
-CRON_CMD="15 5,6,20,21 * * * . /app/backend/cron-env.sh && python /app/backend/cron_scheduler.py >> /app/logs/cron_error.log 2>&1"
-
-echo "Configuring crontab with robust schedule..."
-(
-    echo "SHELL=/bin/bash"
-    echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-    echo "TZ=Asia/Tokyo"
-    echo ""
-    echo "$CRON_CMD"
-) | crontab -
-# --- CRON CONFIGURATION END ---
-
-# IMPORTANT: Ensure timezone is properly set before starting cron
+# Set timezone
 echo "Setting timezone to Asia/Tokyo..."
 export TZ=Asia/Tokyo
 
-# Enable cron logging
-echo "Enabling cron logging..."
-touch /var/log/cron.log
-
-# Enable more verbose cron logging for debugging
-echo "Configuring cron for verbose logging..."
-# Enable cron logging to syslog
-sed -i 's/^#cron./cron./' /etc/rsyslog.d/50-default.conf 2>/dev/null || true
-
-echo "Starting cron daemon..."
-# Restart cron service to ensure it picks up timezone settings and new crontab
-service cron restart
-
-# Verify cron is running and jobs are loaded
-echo "Verifying cron setup..."
-service cron status || echo "Cron status check failed (may be normal)"
-
 echo "Current system time and timezone:"
 date
-echo "Timezone file contents:"
-cat /etc/timezone
-
-echo "Active Crontab:"
-crontab -l
-
-# Start cron log monitoring in background (for debugging)
-echo "Starting log monitoring..."
-tail -f /var/log/cron.log /app/logs/cron_error.log 2>/dev/null &
 
 echo "Starting Uvicorn web server..."
 # Start the uvicorn server in the foreground.
