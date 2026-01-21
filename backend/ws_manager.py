@@ -23,6 +23,7 @@ class WebSocketManager:
         self.running = False
         self.task = None
         self.monitor_task = None
+        self.scheduler_task = None
         self.tickers: List[str] = []
         self.last_fetch_date = None  # Tracks the date of the last successful data fetch
 
@@ -100,6 +101,7 @@ class WebSocketManager:
         self.running = True
         self.task = asyncio.create_task(self._run())
         self.monitor_task = asyncio.create_task(self._monitor_analyzers())
+        self.scheduler_task = asyncio.create_task(self._scheduler_loop())
         logger.info("WebSocketManager started.")
 
     async def stop(self):
@@ -116,6 +118,13 @@ class WebSocketManager:
             self.monitor_task.cancel()
             try:
                 await self.monitor_task
+            except asyncio.CancelledError:
+                pass
+
+        if self.scheduler_task:
+            self.scheduler_task.cancel()
+            try:
+                await self.scheduler_task
             except asyncio.CancelledError:
                 pass
 
@@ -137,6 +146,49 @@ class WebSocketManager:
             await asyncio.sleep(60)
             if MarketSchedule.is_market_open():
                  await self.retry_missing_analyzers()
+
+    async def _scheduler_loop(self):
+        """Independent loop for post-market scheduled tasks."""
+        logger.info("Scheduler loop started.")
+        while self.running:
+            try:
+                # Run every minute
+                await asyncio.sleep(60)
+
+                if MarketSchedule.is_market_open():
+                    continue
+
+                # --- Automatic Data Fetching Logic (16:15 ET) ---
+                now_et = datetime.now(pytz.timezone('US/Eastern'))
+                # Check if today is Monday-Friday (0-4)
+                if now_et.weekday() <= 4:
+                    # Target time: 16:15 ET
+                    target_time = now_et.replace(hour=16, minute=15, second=0, microsecond=0)
+
+                    # Trigger if:
+                    # 1. Current time >= 16:15
+                    # 2. We haven't successfully fetched for this date yet
+                    if now_et >= target_time and self.last_fetch_date != now_et.date():
+                        logger.info(f"Detected post-market time ({now_et}). Triggering automatic data fetch...")
+
+                        # Run fetch_and_notify in a separate thread because it's blocking/heavy
+                        loop = asyncio.get_running_loop()
+                        await loop.run_in_executor(None, fetch_and_notify)
+
+                        # Update last fetch date to prevent re-execution today
+                        self.last_fetch_date = now_et.date()
+                        logger.info(f"Automatic data fetch completed for {self.last_fetch_date}.")
+
+                        # Reload tickers after fetch to ensure we have the latest strong stocks
+                        self.load_tickers()
+                        # Clear old analyzers so we re-initialize with new stocks next open
+                        self.analyzers = {}
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in scheduler loop: {e}")
+                await asyncio.sleep(60) # Wait before retry
 
     async def _run(self):
         """Main loop."""
@@ -178,45 +230,15 @@ class WebSocketManager:
                     logger.error(f"WebSocket error: {e}")
                     await asyncio.sleep(10) # Backoff
             else:
-                logger.info("Market Closed. Waiting and refreshing data...")
+                logger.info("Market Closed. Waiting...")
 
-                # --- Automatic Data Fetching Logic (16:15 ET) ---
-                try:
-                    now_et = datetime.now(pytz.timezone('US/Eastern'))
-                    # Check if today is Monday-Friday (0-4)
-                    if now_et.weekday() <= 4:
-                        # Target time: 16:15 ET
-                        target_time = now_et.replace(hour=16, minute=15, second=0, microsecond=0)
-
-                        # Trigger if:
-                        # 1. Current time >= 16:15
-                        # 2. We haven't successfully fetched for this date yet
-                        if now_et >= target_time and self.last_fetch_date != now_et.date():
-                            logger.info(f"Detected post-market time ({now_et}). Triggering automatic data fetch...")
-
-                            # Run fetch_and_notify in a separate thread because it's blocking/heavy
-                            loop = asyncio.get_running_loop()
-                            await loop.run_in_executor(None, fetch_and_notify)
-
-                            # Update last fetch date to prevent re-execution today
-                            self.last_fetch_date = now_et.date()
-                            logger.info(f"Automatic data fetch completed for {self.last_fetch_date}.")
-
-                            # Reload tickers after fetch to ensure we have the latest strong stocks
-                            self.load_tickers()
-                            # Clear old analyzers so we re-initialize with new stocks next open
-                            self.analyzers = {}
-
-                except Exception as e:
-                    logger.error(f"Error in automatic data fetch: {e}")
+                if not self.analyzers:
+                    # Try to reload if we are waiting, in preparation for next open
+                    self.load_tickers()
+                    await self.initialize_analyzers()
 
                 # Wait 5 minutes before next check
                 await asyncio.sleep(300)
-
-                if not self.analyzers:
-                    # Try to reload if we are waiting
-                    self.load_tickers()
-                    await self.initialize_analyzers()
 
     def get_all_rvols(self) -> Dict[str, float]:
         """Returns current RVol for all monitored tickers."""
