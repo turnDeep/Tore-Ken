@@ -4,7 +4,10 @@ import os
 import logging
 from typing import Dict, List
 import yfinance as yf
+from datetime import datetime
+import pytz
 from backend.rvol_logic import MarketSchedule, generate_volume_profile, RealTimeRvolAnalyzer
+from backend.data_fetcher import fetch_and_notify
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -21,6 +24,7 @@ class WebSocketManager:
         self.task = None
         self.monitor_task = None
         self.tickers: List[str] = []
+        self.last_fetch_date = None  # Tracks the date of the last successful data fetch
 
     @classmethod
     def get_instance(cls):
@@ -175,11 +179,44 @@ class WebSocketManager:
                     await asyncio.sleep(10) # Backoff
             else:
                 logger.info("Market Closed. Waiting and refreshing data...")
-                # When market is closed, we should refresh data periodically
-                await asyncio.sleep(300) # Wait 5 mins
 
-                self.load_tickers()
-                await self.initialize_analyzers()
+                # --- Automatic Data Fetching Logic (16:15 ET) ---
+                try:
+                    now_et = datetime.now(pytz.timezone('US/Eastern'))
+                    # Check if today is Monday-Friday (0-4)
+                    if now_et.weekday() <= 4:
+                        # Target time: 16:15 ET
+                        target_time = now_et.replace(hour=16, minute=15, second=0, microsecond=0)
+
+                        # Trigger if:
+                        # 1. Current time >= 16:15
+                        # 2. We haven't successfully fetched for this date yet
+                        if now_et >= target_time and self.last_fetch_date != now_et.date():
+                            logger.info(f"Detected post-market time ({now_et}). Triggering automatic data fetch...")
+
+                            # Run fetch_and_notify in a separate thread because it's blocking/heavy
+                            loop = asyncio.get_running_loop()
+                            await loop.run_in_executor(None, fetch_and_notify)
+
+                            # Update last fetch date to prevent re-execution today
+                            self.last_fetch_date = now_et.date()
+                            logger.info(f"Automatic data fetch completed for {self.last_fetch_date}.")
+
+                            # Reload tickers after fetch to ensure we have the latest strong stocks
+                            self.load_tickers()
+                            # Clear old analyzers so we re-initialize with new stocks next open
+                            self.analyzers = {}
+
+                except Exception as e:
+                    logger.error(f"Error in automatic data fetch: {e}")
+
+                # Wait 5 minutes before next check
+                await asyncio.sleep(300)
+
+                if not self.analyzers:
+                    # Try to reload if we are waiting
+                    self.load_tickers()
+                    await self.initialize_analyzers()
 
     def get_all_rvols(self) -> Dict[str, float]:
         """Returns current RVol for all monitored tickers."""
