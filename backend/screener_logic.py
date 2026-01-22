@@ -35,6 +35,22 @@ class RDTIndicators:
         df['Vol_SMA_20'] = ta.sma(df['Volume'], length=20)
         df['RVol'] = df['Volume'] / df['Vol_SMA_20']
 
+        # Volume Moving Average Check (Dry Up)
+        df['Vol_SMA_5'] = ta.sma(df['Volume'], length=5)
+        df['Vol_SMA_50'] = ta.sma(df['Volume'], length=50)
+
+        # Up/Down Volume Ratio (Accumulation Check)
+        # Ratio of 'Total volume of rising days' to 'Total volume of falling days' in the past 50 days.
+        close_change = df['Close'].diff()
+        up_volume = df['Volume'].where(close_change > 0, 0)
+        down_volume = df['Volume'].where(close_change < 0, 0)
+
+        up_vol_sum_50 = up_volume.rolling(window=50).sum()
+        down_vol_sum_50 = down_volume.rolling(window=50).sum()
+
+        # Avoid division by zero
+        df['Up_Down_Volume_Ratio_50'] = up_vol_sum_50 / down_vol_sum_50.replace(0, 1)
+
         # Liquidity Check (10-day Avg Volume)
         df['Vol_SMA_10'] = ta.sma(df['Volume'], length=10)
 
@@ -98,8 +114,20 @@ class RDTIndicators:
         # 1. RRS > 1.0 (Most Important)
         rrs_pass = row['RRS'] > 1.0
 
-        # 2. RVol > 1.5 (Fuel)
-        rvol_pass = row['RVol'] > 1.5 if pd.notna(row['RVol']) else False
+        # 2. Volume Check: Dry Up and Accumulation
+        # Dry Up: Vol_SMA_5 < 0.7 * Vol_SMA_50
+        # Accumulation: Up/Down Volume Ratio >= 1.0
+
+        dry_up_pass = False
+        if pd.notna(row['Vol_SMA_5']) and pd.notna(row['Vol_SMA_50']):
+            dry_up_pass = row['Vol_SMA_5'] < (0.7 * row['Vol_SMA_50'])
+
+        accumulation_pass = False
+        if pd.notna(row['Up_Down_Volume_Ratio_50']):
+            accumulation_pass = row['Up_Down_Volume_Ratio_50'] >= 1.0
+
+        # Combine into one volume pass condition for the screener
+        vol_pass = dry_up_pass and accumulation_pass
 
         # 3. ADR% > 4% (Potential)
         adr_pass = row['ADR_Percent'] > 4.0 if pd.notna(row['ADR_Percent']) else False
@@ -121,10 +149,11 @@ class RDTIndicators:
 
         return {
             'RRS_Pass': rrs_pass,
-            'RVol_Pass': rvol_pass,
+            'Volume_Pass': vol_pass,  # Replaces RVol_Pass in filter logic
+            'RVol_Pass': vol_pass,    # Legacy key compatibility if needed (value reflects new logic)
             'ADR_Pass': adr_pass,
             'Liquidity_Pass': liq_pass,
             'Price_Pass': price_pass,
             'Trend_Pass': trend_pass,
-            'All_Pass': rrs_pass and rvol_pass and adr_pass and liq_pass and price_pass and trend_pass
+            'All_Pass': rrs_pass and vol_pass and adr_pass and liq_pass and price_pass and trend_pass
         }
