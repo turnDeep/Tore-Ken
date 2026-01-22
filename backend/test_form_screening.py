@@ -38,7 +38,7 @@ def test_form():
         print("\n--- Detailed Values ---")
         print(f"RRS: {last_row['RRS']} (> 0.0)")
         print(f"ADR%: {last_row['ADR_Percent']} (> 3.0)")
-        print(f"Liq (Vol SMA 20): {last_row['Vol_SMA_20']} (> 1M)")
+        print(f"Liq (Vol SMA 20): {last_row['Vol_SMA_20']} (> 500k)")
 
     except Exception as e:
         print(f"Error: {e}")

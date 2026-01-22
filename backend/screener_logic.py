@@ -132,8 +132,8 @@ class RDTIndicators:
         # 3. ADR% > 3% (Adjusted)
         adr_pass = row['ADR_Percent'] > 3.0 if pd.notna(row['ADR_Percent']) else False
 
-        # 4. Liquidity: Avg Vol (20) > 1,000,000
-        liq_pass = row['Vol_SMA_20'] > 1_000_000 if pd.notna(row['Vol_SMA_20']) else False
+        # 4. Liquidity: Avg Vol (20) > 500,000
+        liq_pass = row['Vol_SMA_20'] > 500_000 if pd.notna(row['Vol_SMA_20']) else False
 
         # 5. Price > $5
         price_pass = row['Close'] > 5.0
