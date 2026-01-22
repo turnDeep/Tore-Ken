@@ -19,6 +19,7 @@ class RDTIndicators:
 
         # Basic Price & MA
         df['SMA_10'] = ta.sma(df['Close'], length=10)
+        df['SMA_20'] = ta.sma(df['Close'], length=20)
         df['SMA_50'] = ta.sma(df['Close'], length=50)
         df['SMA_100'] = ta.sma(df['Close'], length=100)
         df['SMA_200'] = ta.sma(df['Close'], length=200)
@@ -110,13 +111,13 @@ class RDTIndicators:
         price_pass = row['Close'] > 5.0
 
         # 6. Trend Structure (Blue Sky / Strong Trend)
-        # Price > SMA50 > SMA100 > SMA200
-        if pd.isna(row['SMA_50']) or pd.isna(row['SMA_100']) or pd.isna(row['SMA_200']):
+        # Price > SMA10 > SMA20 > SMA50
+        if pd.isna(row['SMA_10']) or pd.isna(row['SMA_20']) or pd.isna(row['SMA_50']):
             trend_pass = False
         else:
-            trend_pass = (row['Close'] > row['SMA_50']) and \
-                         (row['SMA_50'] > row['SMA_100']) and \
-                         (row['SMA_100'] > row['SMA_200'])
+            trend_pass = (row['Close'] > row['SMA_10']) and \
+                         (row['SMA_10'] > row['SMA_20']) and \
+                         (row['SMA_20'] > row['SMA_50'])
 
         return {
             'RRS_Pass': rrs_pass,
