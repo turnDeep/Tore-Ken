@@ -111,8 +111,8 @@ class RDTIndicators:
         Checks if the latest row meets the RDT criteria.
         Returns a dictionary of results.
         """
-        # 1. RRS > 1.0 (Most Important)
-        rrs_pass = row['RRS'] > 1.0
+        # 1. RRS > 0.0 (Adjusted)
+        rrs_pass = row['RRS'] > 0.0
 
         # 2. Volume Check: Dry Up and Accumulation
         # Dry Up: Vol_SMA_5 < 0.7 * Vol_SMA_50
@@ -129,11 +129,11 @@ class RDTIndicators:
         # Combine into one volume pass condition for the screener
         vol_pass = dry_up_pass and accumulation_pass
 
-        # 3. ADR% > 4% (Potential)
-        adr_pass = row['ADR_Percent'] > 4.0 if pd.notna(row['ADR_Percent']) else False
+        # 3. ADR% > 3% (Adjusted)
+        adr_pass = row['ADR_Percent'] > 3.0 if pd.notna(row['ADR_Percent']) else False
 
-        # 4. Liquidity: Avg Vol (10) > 1,000,000
-        liq_pass = row['Vol_SMA_10'] > 1_000_000 if pd.notna(row['Vol_SMA_10']) else False
+        # 4. Liquidity: Avg Vol (20) > 1,000,000
+        liq_pass = row['Vol_SMA_20'] > 1_000_000 if pd.notna(row['Vol_SMA_20']) else False
 
         # 5. Price > $5
         price_pass = row['Close'] > 5.0
