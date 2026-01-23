@@ -52,7 +52,7 @@ def send_push_notifications(daily_data):
     # Note: The format must match what the service worker expects
     payload = {
         "title": "Market Data Updated",
-        "body": f"Date: {daily_data.get('date')}\nStatus: {daily_data.get('status_text')} / Stocks: {len(daily_data.get('strong_stocks', []))}",
+        "body": f"Date: {daily_data.get('date')}\nStatus: {daily_data.get('status_text')} / Stocks: {len(daily_data.get('setup_stocks', []))}",
         "url": "/",
         "icon": "/icons/icon-192x192.png",
         "type": "data-update"
@@ -167,16 +167,16 @@ def fetch_and_notify():
 
     if not tickers:
         logger.warning("No tickers found. Skipping screener.")
-        strong_stocks = []
+        setup_stocks = []
     else:
         # Determine latest date key from market data for file naming
         latest_item = market_data[-1]
         latest_date_key = latest_item["date_key"]
 
         # Pass DATA_DIR and date_key to enable chart generation
-        strong_stocks = run_screener_for_tickers(tickers, spy_df, data_dir=DATA_DIR, date_key=latest_date_key)
+        setup_stocks = run_screener_for_tickers(tickers, spy_df, data_dir=DATA_DIR, date_key=latest_date_key)
 
-    logger.info(f"Screener complete. Found {len(strong_stocks)} strong stocks.")
+    logger.info(f"Screener complete. Found {len(setup_stocks)} setup stocks.")
 
     # Save Daily JSON (Latest)
     latest_item = market_data[-1]
@@ -186,7 +186,7 @@ def fetch_and_notify():
         "date": latest_item["date"],
         "market_status": latest_item["market_status"],
         "status_text": latest_item["status_text"],
-        "strong_stocks": strong_stocks,
+        "setup_stocks": setup_stocks,
         "last_updated": datetime.datetime.now().isoformat()
     }
 
@@ -236,7 +236,7 @@ def fetch_and_notify():
                 "date": d_str,
                 "market_status": item["market_status"],
                 "status_text": item["status_text"],
-                "strong_stocks": backfill_stocks,
+                "setup_stocks": backfill_stocks,
                 "last_updated": datetime.datetime.now().isoformat()
             }
 

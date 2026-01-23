@@ -44,8 +44,12 @@ class WebSocketManager:
             with open(latest_path, 'r') as f:
                 data = json.load(f)
 
-            strong_stocks = data.get('strong_stocks', [])
-            self.tickers = [s['ticker'] for s in strong_stocks]
+            setup_stocks = data.get('setup_stocks', [])
+            # Backward compatibility
+            if not setup_stocks:
+                setup_stocks = data.get('strong_stocks', [])
+
+            self.tickers = [s['ticker'] for s in setup_stocks]
 
             # Filter valid tickers
             self.tickers = [t for t in self.tickers if isinstance(t, str)]
@@ -179,7 +183,7 @@ class WebSocketManager:
                         self.last_fetch_date = now_et.date()
                         logger.info(f"Automatic data fetch completed for {self.last_fetch_date}.")
 
-                        # Reload tickers after fetch to ensure we have the latest strong stocks
+                        # Reload tickers after fetch to ensure we have the latest setup stocks
                         self.load_tickers()
                         # Clear old analyzers so we re-initialize with new stocks next open
                         self.analyzers = {}

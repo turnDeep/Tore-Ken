@@ -179,7 +179,7 @@ class RealTimeRvolAnalyzer:
                 # But if we rely on it, we might lag.
                 # Safest: Use day_volume if available. If not, don't update volume (just wait for next).
                 # Exception: Early morning ticks might populate day_volume slowly?
-                # For Strong Stocks, we expect frequent updates.
+                # For Setup Stocks, we expect frequent updates.
                 pass
 
             # Update RVOL

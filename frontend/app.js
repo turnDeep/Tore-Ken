@@ -540,29 +540,30 @@ document.addEventListener('DOMContentLoaded', () => {
             cursor.style.display = 'block';
         }
 
-        // Fetch Daily Data (Strong Stocks)
-        const contentDiv = document.getElementById('strong-stocks-content');
+        // Fetch Daily Data (Setup Stocks)
+        const contentDiv = document.getElementById('setup-stocks-content');
         contentDiv.innerHTML = '<div class="loading-spinner-small"></div>';
 
         try {
             const response = await fetchWithAuth(`/api/daily/${dateKey}`);
             if (response.ok) {
                 const data = await response.json();
-                renderStrongStocks(data.strong_stocks);
+                // Support both new 'setup_stocks' and old 'strong_stocks' keys
+                renderSetupStocks(data.setup_stocks || data.strong_stocks);
             } else {
                 // Check if this date is 'today' or close enough?
                 // Or simply show no data
-                contentDiv.innerHTML = '<p style="text-align: center; color: #757575;">No Strong Stocks data available for this date.</p>';
+                contentDiv.innerHTML = '<p style="text-align: center; color: #757575;">No Setup Stocks data available for this date.</p>';
             }
         } catch (error) {
              contentDiv.innerHTML = '<p style="text-align: center; color: #757575;">Error loading data.</p>';
         }
     }
 
-    function renderStrongStocks(stocks) {
-        const contentDiv = document.getElementById('strong-stocks-content');
+    function renderSetupStocks(stocks) {
+        const contentDiv = document.getElementById('setup-stocks-content');
         if (!stocks || stocks.length === 0) {
-            contentDiv.innerHTML = '<p style="text-align: center;">No Strong Stocks found.</p>';
+            contentDiv.innerHTML = '<p style="text-align: center;">No Setup Stocks found.</p>';
             return;
         }
 

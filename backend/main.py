@@ -268,7 +268,7 @@ def get_stock_chart(filename: str, current_user: str = Depends(get_current_user_
 
 @app.get("/api/daily/{date_key}")
 def get_daily_data(date_key: str, current_user: str = Depends(get_current_user)):
-    """Returns the daily data (Strong Stocks, Status) for a specific date (YYYYMMDD)."""
+    """Returns the daily data (Setup Stocks, Status) for a specific date (YYYYMMDD)."""
     # Validation
     if not re.match(r'^\d{8}$', date_key):
          raise HTTPException(status_code=400, detail="Invalid date format.")

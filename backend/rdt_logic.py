@@ -362,7 +362,7 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
     If data_dir and date_key are provided, generates and saves charts for passing stocks.
     If target_date (str 'YYYY-MM-DD' or datetime) is provided, screens based on that specific date.
     """
-    strong_stocks = []
+    setup_stocks = []
 
     # Prepare target date filter
     target_dt = None
@@ -485,7 +485,7 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
                             if generate_stock_chart(df_calc, chart_path, ticker, vcp_data=vcp_data):
                                 stock_info["chart_image"] = chart_filename
 
-                        strong_stocks.append(stock_info)
+                        setup_stocks.append(stock_info)
 
                 except Exception as e:
                     # print(f"Error screening {ticker}: {e}")
@@ -495,4 +495,4 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
         print(f"Error in run_screener_for_tickers: {e}")
         return []
 
-    return strong_stocks
+    return setup_stocks
