@@ -25,6 +25,7 @@ class WebSocketManager:
         self.monitor_task = None
         self.scheduler_task = None
         self.tickers: List[str] = []
+        self.ticker_metadata: Dict[str, dict] = {}
         self.last_fetch_date = None  # Tracks the date of the last successful data fetch
 
     @classmethod
@@ -45,10 +46,17 @@ class WebSocketManager:
                 data = json.load(f)
 
             strong_stocks = data.get('strong_stocks', [])
-            self.tickers = [s['ticker'] for s in strong_stocks]
+            self.tickers = []
+            self.ticker_metadata = {}
 
-            # Filter valid tickers
-            self.tickers = [t for t in self.tickers if isinstance(t, str)]
+            for s in strong_stocks:
+                if isinstance(s.get('ticker'), str):
+                    t = s['ticker']
+                    self.tickers.append(t)
+                    self.ticker_metadata[t] = {
+                        'prev_high': s.get('prev_high')
+                    }
+
             logger.info(f"Loaded {len(self.tickers)} tickers for monitoring: {self.tickers}")
 
         except Exception as e:
@@ -63,8 +71,13 @@ class WebSocketManager:
             try:
                 # Run profile generation in a thread to avoid blocking the event loop
                 profile = await loop.run_in_executor(None, generate_volume_profile, ticker)
+
+                # Get metadata
+                meta = self.ticker_metadata.get(ticker, {})
+                prev_high = meta.get('prev_high')
+
                 if not profile.empty:
-                    self.analyzers[ticker] = RealTimeRvolAnalyzer(ticker, profile)
+                    self.analyzers[ticker] = RealTimeRvolAnalyzer(ticker, profile, prev_high=prev_high)
                 else:
                     logger.warning(f"Could not generate profile for {ticker}")
             except Exception as e:
@@ -84,8 +97,13 @@ class WebSocketManager:
         for ticker in missing_tickers:
             try:
                 profile = await loop.run_in_executor(None, generate_volume_profile, ticker)
+
+                # Get metadata
+                meta = self.ticker_metadata.get(ticker, {})
+                prev_high = meta.get('prev_high')
+
                 if not profile.empty:
-                    self.analyzers[ticker] = RealTimeRvolAnalyzer(ticker, profile)
+                    self.analyzers[ticker] = RealTimeRvolAnalyzer(ticker, profile, prev_high=prev_high)
                     logger.info(f"Successfully initialized analyzer for {ticker}")
                 else:
                     logger.warning(f"Still could not generate profile for {ticker}")
@@ -240,10 +258,10 @@ class WebSocketManager:
                 # Wait 5 minutes before next check
                 await asyncio.sleep(300)
 
-    def get_all_rvols(self) -> Dict[str, float]:
-        """Returns current RVol for all monitored tickers."""
+    def get_all_rvols(self) -> Dict[str, dict]:
+        """Returns current RVol and status for all monitored tickers."""
         return {
-            ticker: analyzer.current_rvol
+            ticker: analyzer.get_status()
             for ticker, analyzer in self.analyzers.items()
         }
 

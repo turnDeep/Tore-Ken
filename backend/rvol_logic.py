@@ -141,13 +141,19 @@ def generate_volume_profile(ticker: str, lookback_days: int = 20) -> pd.DataFram
 
 
 class RealTimeRvolAnalyzer:
-    def __init__(self, ticker: str, profile: pd.DataFrame):
+    def __init__(self, ticker: str, profile: pd.DataFrame, prev_high: float = None):
         self.ticker = ticker
         self.profile = profile
+        self.prev_high = prev_high
         self.current_rvol = 0.0
 
         # State
         self.current_day_volume = 0
+        self.current_price = 0.0
+
+        # Breakout State
+        self.orb_5m_high = None
+        self.breakout_status = None  # "DAILY_BREAKOUT", "ORB_5M", or None
 
     def process_message(self, msg: dict):
         """
@@ -161,32 +167,75 @@ class RealTimeRvolAnalyzer:
             ts_ms = int(ts_ms)
             current_dt = datetime.fromtimestamp(ts_ms / 1000.0, tz=pytz.timezone('US/Eastern'))
 
+            # Extract Price
+            price_str = msg.get('price') or msg.get('regularMarketPrice') or msg.get('last_price')
+            if price_str is not None:
+                self.current_price = float(price_str)
+                self._check_breakouts(current_dt)
+
             # Extract Volume
             day_volume_str = msg.get('day_volume') or msg.get('dayVolume')
-            last_size_str = msg.get('last_size') or msg.get('lastSize')
 
             day_volume = int(day_volume_str) if day_volume_str is not None else None
-            last_size = int(last_size_str) if last_size_str is not None else 0
 
             # Logic to maintain reliable current_day_volume
             if day_volume is not None:
                 self.current_day_volume = day_volume
-            else:
-                # If day_volume is missing, assume it's an additive tick?
-                # yfinance WS behavior: sometimes just price updates.
-                # If last_size > 0, we *could* add it, but mixing 'day_volume' updates and 'tick' accumulation is risky.
-                # Usually 'day_volume' comes frequently enough.
-                # But if we rely on it, we might lag.
-                # Safest: Use day_volume if available. If not, don't update volume (just wait for next).
-                # Exception: Early morning ticks might populate day_volume slowly?
-                # For Strong Stocks, we expect frequent updates.
-                pass
 
             # Update RVOL
             self._update_rvol(current_dt)
 
         except Exception as e:
             logger.error(f"[{self.ticker}] Error processing message: {e}")
+
+    def _check_breakouts(self, current_dt: datetime):
+        """
+        Check for Daily Breakout and 5m ORB.
+        """
+        # 1. ORB 5M Logic
+        # Time window: 9:30 - 9:35 ET
+        # During this window, track the High.
+        # After 9:35, if Price > High, trigger ORB.
+        market_open = current_dt.replace(hour=9, minute=30, second=0, microsecond=0)
+        orb_end = current_dt.replace(hour=9, minute=35, second=0, microsecond=0)
+
+        if current_dt < market_open:
+            return
+
+        if current_dt <= orb_end:
+            # We are in the ORB formation period
+            if self.orb_5m_high is None or self.current_price > self.orb_5m_high:
+                self.orb_5m_high = self.current_price
+        else:
+            # We are after the formation period
+            # Check for Breakout if we have a valid ORB high
+            if self.orb_5m_high and self.current_price > self.orb_5m_high:
+                # If we were already in DAILY_BREAKOUT, keep it (higher priority typically?)
+                # Actually, user wants to know if "entered on opening range highs".
+                # We can flag ORB if it happens.
+                if self.breakout_status != "DAILY_BREAKOUT":
+                     self.breakout_status = "ORB_5M"
+
+        # 2. Daily Breakout Logic
+        if self.prev_high and self.current_price > self.prev_high:
+            self.breakout_status = "DAILY_BREAKOUT"
+
+        # If price falls back?
+        # Typically breakout status is sticky for the day if we want to show "it happened".
+        # But if currently trading below, maybe we should clear it?
+        # User says "Enter when...", so signal is "NOW".
+        # If price drops back, it's a failed breakout or pullback.
+        # I'll make it state-based on *current* price.
+        if self.prev_high and self.current_price <= self.prev_high:
+             if self.breakout_status == "DAILY_BREAKOUT":
+                 self.breakout_status = None # Reset if falls back
+                 # Check if ORB is still valid?
+                 if self.orb_5m_high and self.current_price > self.orb_5m_high:
+                     self.breakout_status = "ORB_5M"
+
+        if self.orb_5m_high and self.current_price <= self.orb_5m_high:
+             if self.breakout_status == "ORB_5M":
+                 self.breakout_status = None
 
     def _update_rvol(self, current_dt: datetime):
         """Calculate Cumulative RVol"""
@@ -196,8 +245,6 @@ class RealTimeRvolAnalyzer:
         # Current time details
         # We need to find the "Bucket" we are currently in.
         # E.g. 9:32 is in the 9:30 bucket.
-        curr_time = current_dt.time()
-
         # Determine the start of the current 5m bar
         minute_floor = (current_dt.minute // 5) * 5
         bar_start_time = time(current_dt.hour, minute_floor)
@@ -208,7 +255,7 @@ class RealTimeRvolAnalyzer:
 
         # Ensure we can look up in profile
         if bar_start_time not in self.profile.index:
-            logger.warning(f"Bar start {bar_start_time} not in profile index: {self.profile.index}")
+            # logger.warning(f"Bar start {bar_start_time} not in profile index")
             return
 
         # Get CumVolume of the *previous* bucket
@@ -252,3 +299,13 @@ class RealTimeRvolAnalyzer:
 
         except Exception as e:
             logger.error(f"Error calc rvol for {self.ticker}: {e}")
+
+    def get_status(self):
+        """Returns the current status dictionary."""
+        return {
+            "rvol": self.current_rvol,
+            "current_price": self.current_price,
+            "breakout": self.breakout_status,
+            "prev_high": self.prev_high,
+            "orb_high": self.orb_5m_high
+        }

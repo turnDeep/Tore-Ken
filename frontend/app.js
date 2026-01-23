@@ -692,8 +692,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 Object.keys(data).forEach(ticker => {
                     const el = document.getElementById(`rvol-${ticker}`);
                     if (el) {
-                        const val = data[ticker];
-                        el.textContent = `RVol: ${val.toFixed(2)}x`;
+                        const info = data[ticker];
+
+                        let text = "";
+                        let color = "#FF00FF"; // Default Magenta
+                        let fontWeight = "normal";
+
+                        if (typeof info === 'object' && info !== null) {
+                            const rvol = info.rvol || 0;
+                            const price = info.current_price || 0;
+                            const breakout = info.breakout;
+
+                            text = `RVol: ${rvol.toFixed(2)}x`;
+                            if (price > 0) {
+                                text += ` | Pr: ${price.toFixed(2)}`;
+                            }
+
+                            if (breakout) {
+                                if (breakout === "DAILY_BREAKOUT") {
+                                    text += " [DAILY BO!]";
+                                    color = "#00DD00"; // Bright Green
+                                    fontWeight = "bold";
+                                } else if (breakout === "ORB_5M") {
+                                    text += " [ORB 5m]";
+                                    color = "#FFA500"; // Orange
+                                    fontWeight = "bold";
+                                }
+                            }
+                        } else {
+                            // Fallback for number
+                            text = `RVol: ${Number(info).toFixed(2)}x`;
+                        }
+
+                        el.textContent = text;
+                        el.style.color = color;
+                        el.style.fontWeight = fontWeight;
                     }
                 });
             }

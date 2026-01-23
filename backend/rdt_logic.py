@@ -474,6 +474,7 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
                             "rvol": round(last_row['RVol'], 2),
                             "adr_pct": round(last_row['ADR_Percent'], 2),
                             "atr_multiple": round(last_row['ATR_Multiple_50MA'], 2),
+                            "prev_high": round(last_row['High'], 2),
                             "vcp_metrics": vcp_metrics  # Save metrics to JSON
                         }
 
