@@ -15,6 +15,17 @@ logger = logging.getLogger(__name__)
 
 DATA_DIR = os.path.join(os.getcwd(), 'data')
 
+def fetch_ticker_volume(ticker):
+    """
+    Helper to fetch volume for a single ticker (to be run in executor).
+    """
+    try:
+        t = yf.Ticker(ticker)
+        return t.fast_info.last_volume
+    except Exception as e:
+        logger.error(f"Error fetching volume for {ticker}: {e}")
+        return None
+
 class WebSocketManager:
     _instance = None
 
@@ -24,6 +35,7 @@ class WebSocketManager:
         self.task = None
         self.monitor_task = None
         self.scheduler_task = None
+        self.polling_task = None
         self.tickers: List[str] = []
         self.last_fetch_date = None  # Tracks the date of the last successful data fetch
 
@@ -102,6 +114,7 @@ class WebSocketManager:
         self.task = asyncio.create_task(self._run())
         self.monitor_task = asyncio.create_task(self._monitor_analyzers())
         self.scheduler_task = asyncio.create_task(self._scheduler_loop())
+        self.polling_task = asyncio.create_task(self._poll_volumes_loop())
         logger.info("WebSocketManager started.")
 
     async def stop(self):
@@ -128,6 +141,13 @@ class WebSocketManager:
             except asyncio.CancelledError:
                 pass
 
+        if self.polling_task:
+            self.polling_task.cancel()
+            try:
+                await self.polling_task
+            except asyncio.CancelledError:
+                pass
+
         logger.info("WebSocketManager stopped.")
 
     def handle_message(self, msg):
@@ -146,6 +166,35 @@ class WebSocketManager:
             await asyncio.sleep(60)
             if MarketSchedule.is_market_open():
                  await self.retry_missing_analyzers()
+
+    async def _poll_volumes_loop(self):
+        """Periodically polls volume for all tickers to ensure RVol is up to date."""
+        logger.info("Volume polling loop started.")
+        while self.running:
+            try:
+                # Poll every 15 seconds
+                await asyncio.sleep(15)
+
+                if not self.analyzers:
+                    continue
+
+                if MarketSchedule.is_market_open() or os.getenv("DEBUG_WS", "false").lower() == "true":
+                    loop = asyncio.get_running_loop()
+                    # Iterate over a copy of keys to avoid runtime error if dictionary changes
+                    current_tickers = list(self.analyzers.keys())
+
+                    for ticker in current_tickers:
+                         if not self.running: break
+                         if ticker in self.analyzers:
+                             vol = await loop.run_in_executor(None, fetch_ticker_volume, ticker)
+                             if vol:
+                                 self.analyzers[ticker].update_volume_from_polling(vol)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in polling loop: {e}")
+                await asyncio.sleep(15)
 
     async def _scheduler_loop(self):
         """Independent loop for post-market scheduled tasks."""

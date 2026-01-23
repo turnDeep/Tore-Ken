@@ -188,6 +188,19 @@ class RealTimeRvolAnalyzer:
         except Exception as e:
             logger.error(f"[{self.ticker}] Error processing message: {e}")
 
+    def update_volume_from_polling(self, volume: int):
+        """
+        Updates volume from external polling (fast_info) and recalculates RVol.
+        """
+        if volume is None or volume <= 0:
+            return
+
+        self.current_day_volume = volume
+
+        # Calculate RVol based on current time
+        now_et = datetime.now(pytz.timezone('US/Eastern'))
+        self._update_rvol(now_et)
+
     def _update_rvol(self, current_dt: datetime):
         """Calculate Cumulative RVol"""
         if self.profile.empty or self.current_day_volume == 0:
