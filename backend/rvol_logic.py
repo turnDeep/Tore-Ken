@@ -74,10 +74,11 @@ def generate_volume_profile(ticker: str, lookback_days: int = 20) -> pd.DataFram
                 df = df.set_index(time_col)
 
         # Convert to Eastern Time
+        et_tz = pytz.timezone('US/Eastern')
         if df.index.tz is None:
-             df.index = df.index.tz_localize('UTC').tz_convert('US/Eastern')
+             df.index = df.index.tz_localize('UTC').tz_convert(et_tz)
         else:
-             df.index = df.index.tz_convert('US/Eastern')
+             df.index = df.index.tz_convert(et_tz)
 
         # Filter out "today"
         today_et = datetime.now(pytz.timezone('US/Eastern')).date()
