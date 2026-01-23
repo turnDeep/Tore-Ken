@@ -21,8 +21,6 @@ class RDTIndicators:
         df['SMA_10'] = ta.sma(df['Close'], length=10)
         df['SMA_20'] = ta.sma(df['Close'], length=20)
         df['SMA_50'] = ta.sma(df['Close'], length=50)
-        df['SMA_100'] = ta.sma(df['Close'], length=100)
-        df['SMA_200'] = ta.sma(df['Close'], length=200)
 
         # ATR (14)
         df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
