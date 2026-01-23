@@ -201,11 +201,11 @@ def fetch_and_notify():
     with open(latest_filepath, "w") as f:
         json.dump(daily_data, f)
 
-    # --- Backfill Logic: Check past 5 days ---
-    logger.info("Checking for missing past data (5 days)...")
+    # --- Backfill Logic: Check past 20 days ---
+    logger.info("Checking for missing past data (20 days)...")
 
-    # Get last 5 market dates from history (reverse order to prioritize recent)
-    past_days = sorted(market_data, key=lambda x: x['date_key'], reverse=True)[:5]
+    # Get last 20 market dates from history (reverse order to prioritize recent)
+    past_days = sorted(market_data, key=lambda x: x['date_key'], reverse=True)[:20]
 
     for item in past_days:
         d_key = item['date_key']
