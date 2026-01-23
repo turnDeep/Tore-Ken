@@ -127,7 +127,7 @@ def load_tickers():
 
         tickers = [t.strip().upper() for t in tickers if isinstance(t, str) and t.strip()]
         # Filter logic
-        tickers = [t for t in tickers if not (len(t) == 5 and t[-1] in ['W', 'R', 'U'])]
+        # tickers = [t for t in tickers if not (len(t) == 5 and t[-1] in ['W', 'R', 'U'])]
         # Remove dots for yfinance (BRK.B -> BRK-B)
         tickers = [t.replace('.', '-') for t in tickers]
 
