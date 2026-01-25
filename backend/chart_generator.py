@@ -246,6 +246,12 @@ def generate_stock_chart(df, output_path, ticker, vcp_data=None):
              avwap_plot = avwap_series.reindex(plot_df.index)
              apds.append(mpf.make_addplot(avwap_plot, panel=0, color='purple', width=1.5))
 
+    # --- Panel 0: SMAs ---
+    if 'SMA_10' in plot_df.columns:
+        apds.append(mpf.make_addplot(plot_df['SMA_10'], panel=0, color='pink', width=1.0))
+    if 'SMA_20' in plot_df.columns:
+        apds.append(mpf.make_addplot(plot_df['SMA_20'], panel=0, color='magenta', width=1.0))
+
     # --- Panel 1: RRS (Real Relative Strength) ---
     if 'RRS' in plot_df.columns:
         # Calculate symmetric limits to center 0
