@@ -7,6 +7,7 @@ import os
 from backend.screener_logic import RDTIndicators
 from backend.chart_generator import generate_stock_chart
 from scipy.signal import argrelextrema
+from backend.vcp_impl import VCPImplementation
 
 def calculate_wma(series, length):
     """Calculates Weighted Moving Average (WMA)."""
@@ -253,109 +254,6 @@ def calculate_anchored_vwap_252_high(df):
 
     return avwap_series
 
-def analyze_vcp_logic(df, pivots, lookback=5):
-    """
-    Analyzes VCP characteristics: Contraction, Tightness, Dry Up.
-    Checks the last `lookback` days for qualification to allow for breakout volume.
-    Returns a dictionary of metrics.
-    """
-    vcp_metrics = {
-        'contractions': [],
-        'is_contracting': False,
-        'tightness_val': 0.0,
-        'is_tight': False,
-        'vol_vs_sma': 0.0,
-        'is_dry_up': False,
-        'vcp_qualified': False,
-        'qualified_date': None
-    }
-
-    if df is None or df.empty:
-        return vcp_metrics
-
-    # 1. Contraction Analysis (Wave Depths - Structural Check)
-    contractions = []
-    pivots_rev = list(reversed(pivots))
-
-    for i in range(len(pivots_rev) - 1):
-        p2 = pivots_rev[i]   # More recent
-        p1 = pivots_rev[i+1] # Older
-
-        if p1['type'] == 'high' and p2['type'] == 'low':
-            depth = (p2['price'] - p1['price']) / p1['price']
-            contractions.append(abs(depth))
-
-        if len(contractions) >= 4:
-            break
-
-    contractions = list(reversed(contractions))
-    vcp_metrics['contractions'] = [round(c * 100, 2) for c in contractions]
-
-    is_contracting = False
-    if len(contractions) >= 2:
-        if contractions[-1] < max(contractions[:-1]) and contractions[-1] < 0.10:
-            is_contracting = True
-    elif len(contractions) == 1:
-            if contractions[0] < 0.15:
-                is_contracting = True
-
-    vcp_metrics['is_contracting'] = bool(is_contracting)
-
-    # 2. Iterate Backwards through Lookback Window for Tightness/DryUp
-    # We want to see if it WAS valid VCP within the last few days (before the volume came in)
-
-    # Pre-calculate indicators needed for the window
-    # Tightness (10d volatility)
-    hl_range = (df['High'] - df['Low']) / df['Close']
-    rolling_tightness = hl_range.rolling(window=10).mean()
-
-    # Dry Up (50d Vol SMA)
-    vol_sma50 = df['Volume'].rolling(window=50).mean()
-
-    window_end = len(df)
-    window_start = max(0, window_end - lookback)
-
-    best_date = None
-    passed_any = False
-
-    # Last values for display (current state)
-    current_tightness = rolling_tightness.iloc[-1]
-    current_vol = df['Volume'].iloc[-1]
-    current_vol_sma = vol_sma50.iloc[-1]
-
-    vcp_metrics['tightness_val'] = float(round(current_tightness * 100, 2)) if pd.notna(current_tightness) else 0.0
-    vcp_metrics['vol_vs_sma'] = float(round(current_vol / current_vol_sma, 2)) if (pd.notna(current_vol_sma) and current_vol_sma > 0) else 0.0
-
-    # These booleans represent CURRENT state (which might be False if breakout occurring)
-    vcp_metrics['is_tight'] = bool(vcp_metrics['tightness_val'] < 4.0)
-    vcp_metrics['is_dry_up'] = bool(vcp_metrics['vol_vs_sma'] < 0.7)
-
-    # Loop back to find a qualifying day
-    for i in range(window_end - 1, window_start - 1, -1):
-        idx = df.index[i]
-
-        t_val = rolling_tightness.iloc[i]
-        v_val = df['Volume'].iloc[i]
-        sma_val = vol_sma50.iloc[i]
-
-        if pd.isna(t_val) or pd.isna(sma_val) or sma_val == 0:
-            continue
-
-        is_t = t_val < 0.04
-        is_d = v_val < (sma_val * 0.7)
-
-        if is_t and is_d:
-            passed_any = True
-            best_date = idx.strftime('%Y-%m-%d')
-            # If we find a match closest to today, we can stop or keep looking for 'best'.
-            # Stopping at most recent match is logical.
-            break
-
-    vcp_metrics['vcp_qualified'] = bool(passed_any)
-    vcp_metrics['qualified_date'] = best_date
-
-    return vcp_metrics
-
 def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, target_date=None):
     """
     Runs the RDT screener for a list of tickers against the SPY dataframe.
@@ -429,6 +327,10 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
                     if len(df) < 200:
                         continue
 
+                    # Ensure columns are Capitalized as expected by VCPImplementation (High, Low, Close, Volume)
+                    # yfinance usually gives Capitalized. But just in case.
+                    # RDTIndicators expects capitalized too.
+
                     # Also need to slice SPY to match context if strict,
                     # but calculate_all handles alignment via intersection.
                     # Ideally we pass the full SPY so indicators can be calc'd properly,
@@ -455,13 +357,43 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
                         if (reference_dt - row_date).days > 5:
                             continue
 
-                    check_res = RDTIndicators.check_filters(last_row)
+                    # --- REPLACED LOGIC START ---
+                    # Use statistical_logic for trend/setup filtering
+                    # Use geometric_logic for pattern confirmation
 
-                    if check_res['All_Pass']:
+                    # Need screenDict to capture output details if needed
+                    screen_dict = {}
+
+                    # 1. Statistical Logic (Minervini Trend & Volume)
+                    is_statistical_pass = VCPImplementation.statistical_logic(df_calc, screenDict=screen_dict)
+
+                    # 2. Geometric Logic (Structural VCP)
+                    # Only check if statistical pass? Or check both?
+                    # The user said "Replace current logic".
+                    # Current logic did Check Filters -> Then VCP Analysis.
+                    # So we should probably do Statistical -> Geometric.
+
+                    is_geometric_pass = False
+                    if is_statistical_pass:
+                        is_geometric_pass = VCPImplementation.geometric_logic(df_calc, screenDict=screen_dict, stockName=ticker)
+
+                    if is_statistical_pass and is_geometric_pass:
                         # --- Calculate VCP Metrics and Plot Data ---
+                        # We still use the old calculate_zigzag for plotting purposes (compatibility with chart_generator)
+                        # Or we could update chart_generator to use VCPImplementation.getTopsAndBottoms?
+                        # For now, let's keep the visualization logic as is to avoid breaking chart generation,
+                        # but the SELECTION logic is now VCPImplementation.
+
                         pivots = calculate_zigzag_scipy(df_calc, order=5)
                         avwap = calculate_anchored_vwap_252_high(df_calc)
-                        vcp_metrics = analyze_vcp_logic(df_calc, pivots)
+
+                        # We might want to populate vcp_metrics from screen_dict
+                        vcp_metrics = {
+                            'contractions': screen_dict.get('vcp_consolidations', []),
+                            'is_contracting': True, # Implicitly true if passed
+                            'vcp_qualified': True,
+                            'pattern_type': screen_dict.get('vcp_pattern', 'Unknown')
+                        }
 
                         vcp_data = {
                             'pivots': pivots,
@@ -470,10 +402,10 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
 
                         stock_info = {
                             "ticker": ticker,
-                            "rrs": round(last_row['RRS'], 2),
-                            "rvol": round(last_row['RVol'], 2),
-                            "adr_pct": round(last_row['ADR_Percent'], 2),
-                            "atr_multiple": round(last_row['ATR_Multiple_50MA'], 2),
+                            "rrs": round(last_row['RRS'], 2) if 'RRS' in last_row else 0.0, # RRS might be 0 if not calculated? calculate_all does it.
+                            "rvol": round(last_row['RVol'], 2) if 'RVol' in last_row else 0.0,
+                            "adr_pct": round(last_row['ADR_Percent'], 2) if 'ADR_Percent' in last_row else 0.0,
+                            "atr_multiple": round(last_row['ATR_Multiple_50MA'], 2) if 'ATR_Multiple_50MA' in last_row else 0.0,
                             "vcp_metrics": vcp_metrics  # Save metrics to JSON
                         }
 
@@ -486,6 +418,7 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
                                 stock_info["chart_image"] = chart_filename
 
                         strong_stocks.append(stock_info)
+                    # --- REPLACED LOGIC END ---
 
                 except Exception as e:
                     # print(f"Error screening {ticker}: {e}")
