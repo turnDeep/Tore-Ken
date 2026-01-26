@@ -20,7 +20,7 @@ class TestNotificationPayload(unittest.TestCase):
         daily_data = {
             "date": "2026-01-13",
             "status_text": "Green",
-            "strong_stocks": ["AAPL", "TSLA"]
+            "setup_stocks": ["AAPL", "TSLA"]
         }
 
         send_push_notifications(daily_data)

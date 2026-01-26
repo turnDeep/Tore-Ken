@@ -4,7 +4,7 @@
 
 **Tore-ken (トレけん)**（サブタイトル: *トレードに失敗しないためにけんじつに勉強してみた*）は、個人投資家が市場トレンドを把握し、有望な銘柄を発掘するためのシンプルかつ強力なダッシュボードです。
 
-RDT (Reality Down Theory) システムに基づき、S&P 500の市場サイクル（強気/弱気）を判定し、独自のフィルタリングロジックを通過した「Strong Stocks」を提示します。
+RDT (Reality Down Theory) システムに基づき、S&P 500の市場サイクル（強気/弱気）を判定し、独自のフィルタリングロジックを通過した「Setup Stocks」を提示します。
 
 ## 2. 主要機能
 
@@ -16,7 +16,7 @@ RDT (Reality Down Theory) システムに基づき、S&P 500の市場サイク�
     - **Neutral**: 中立局面。
 - **インジケーター**: TSV (Time Segmented Volume) 近似値や StochRSI を使用した独自ロジックにより背景色を自動判定。
 
-### 2.2 Strong Stocks (有望銘柄リスト)
+### 2.2 Setup Stocks (有望銘柄リスト)
 - **RDTスクリーナー**: 市場全体の銘柄から、以下の基準を満たす「強い銘柄」を抽出。
     - RRS (Relative RS Rating)
     - RVol (Relative Volume)
