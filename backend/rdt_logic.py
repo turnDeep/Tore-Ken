@@ -361,8 +361,10 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
     Runs the RDT screener for a list of tickers against the SPY dataframe.
     If data_dir and date_key are provided, generates and saves charts for passing stocks.
     If target_date (str 'YYYY-MM-DD' or datetime) is provided, screens based on that specific date.
+    Implements Absolute Strength (AS) Rating calculation (3-month timeframe).
     """
-    strong_stocks = []
+    candidates = []
+    ticker_returns_3m = {} # Store 3-month returns for all tickers for percentile ranking
 
     # Prepare target date filter
     target_dt = None
@@ -426,8 +428,22 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
                         if df.empty:
                             continue
 
+                    # Need enough history for calculations (200 SMA and AS Rating)
                     if len(df) < 200:
                         continue
+
+                    # --- AS Rating Data Collection ---
+                    # Calculate 3-month return (approx 63 trading days)
+                    # We use iloc[-63] as the "start" price.
+                    # Ensure we have at least 63 days (already checked < 200, so safe)
+                    try:
+                        current_close = df['Close'].iloc[-1]
+                        prev_close_3m = df['Close'].iloc[-63] # 3 months ago
+                        if prev_close_3m > 0:
+                            return_3m = ((current_close - prev_close_3m) / prev_close_3m) * 100
+                            ticker_returns_3m[ticker] = return_3m
+                    except Exception:
+                        pass # Skip if calculation fails
 
                     # Also need to slice SPY to match context if strict,
                     # but calculate_all handles alignment via intersection.
@@ -474,18 +490,12 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
                             "rvol": round(last_row['RVol'], 2),
                             "adr_pct": round(last_row['ADR_Percent'], 2),
                             "atr_multiple": round(last_row['ATR_Multiple_50MA'], 2),
-                            "vcp_metrics": vcp_metrics  # Save metrics to JSON
+                            "vcp_metrics": vcp_metrics,
+                            "df_calc": df_calc, # Store dataframe for chart generation later
+                            "vcp_data": vcp_data
                         }
 
-                        # Generate Chart
-                        if data_dir and date_key:
-                            chart_filename = f"{date_key}-{ticker}.png"
-                            chart_path = os.path.join(data_dir, chart_filename)
-                            # Pass vcp_data to chart generator
-                            if generate_stock_chart(df_calc, chart_path, ticker, vcp_data=vcp_data):
-                                stock_info["chart_image"] = chart_filename
-
-                        strong_stocks.append(stock_info)
+                        candidates.append(stock_info)
 
                 except Exception as e:
                     # print(f"Error screening {ticker}: {e}")
@@ -494,5 +504,37 @@ def run_screener_for_tickers(tickers, spy_df, data_dir=None, date_key=None, targ
     except Exception as e:
         print(f"Error in run_screener_for_tickers: {e}")
         return []
+
+    # --- Calculate AS Rating and Filter ---
+    strong_stocks = []
+
+    if ticker_returns_3m:
+        returns_series = pd.Series(ticker_returns_3m)
+        # Calculate Percentile Rank (0-100)
+        # pct=True returns 0.0-1.0
+        ranks = returns_series.rank(pct=True) * 100
+
+        for cand in candidates:
+            ticker = cand['ticker']
+            if ticker in ranks:
+                as_rating = ranks[ticker]
+                cand['as_rating'] = int(round(as_rating, 0))
+
+                # Check AS Rating Filter (>= 70)
+                if as_rating >= 70:
+                    # Prepare final object (remove bulky objects if not needed)
+                    # We need to generate chart if passing
+
+                    df_calc = cand.pop('df_calc')
+                    vcp_data = cand.pop('vcp_data')
+
+                    # Generate Chart
+                    if data_dir and date_key:
+                        chart_filename = f"{date_key}-{ticker}.png"
+                        chart_path = os.path.join(data_dir, chart_filename)
+                        if generate_stock_chart(df_calc, chart_path, ticker, vcp_data=vcp_data):
+                            cand["chart_image"] = chart_filename
+
+                    strong_stocks.append(cand)
 
     return strong_stocks
