@@ -607,9 +607,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             item.appendChild(line1);
 
-            // Line 2: RTI
+            // Line 2: RTI & Entry Date
             const line2 = document.createElement('div');
-            line2.textContent = `RTI: ${s.rti !== undefined ? s.rti : 'N/A'}`;
+            // Calculate Days Held
+            let daysHeldText = "";
+            if (s.entry_date) {
+                const entry = new Date(s.entry_date);
+                const today = new Date();
+                const diffTime = Math.abs(today - entry);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                daysHeldText = ` | Entry: ${s.entry_date} (${diffDays}d)`;
+            }
+
+            line2.textContent = `RTI: ${s.rti !== undefined ? s.rti : 'N/A'}${daysHeldText}`;
             line2.style.fontSize = '1.2em';
             line2.style.marginTop = '5px';
             item.appendChild(line2);
