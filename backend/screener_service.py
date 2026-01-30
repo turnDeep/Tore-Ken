@@ -130,12 +130,15 @@ def calculate_entry_date(ticker, atr_state_series, rs_perc_series, rs_ma_series,
         logger.error(f"Error calculating entry date for {ticker}: {e}")
         return None
 
-def apply_screening_logic():
+def apply_screening_logic(is_weekend_screening=True):
     """
     Applies Entry and Exit logic to determine the list of Strong Stocks.
     Returns a list of dicts.
+
+    is_weekend_screening: If True, calculates Entry/Exit/Persistence based on weekly criteria.
+                          If False, only updates metrics (ADR%, Price) for existing list.
     """
-    logger.info("Applying Screening Logic...")
+    logger.info(f"Applying Screening Logic (Weekend Mode: {is_weekend_screening})...")
 
     # 1. Load Data
     atr_data = load_pickle("atr_trailing_stop_weekly.pkl")
@@ -172,97 +175,93 @@ def apply_screening_logic():
         except Exception as e:
             logger.error(f"Error loading latest.json: {e}")
 
-    # Prepare data series
-    atr_state = atr_data["Trend_State"]
-    rs_perc = rs_perc_data["Percentile_1M"]
-    rs_ma = rs_vol_data["RS_MA"]
-    zone_vals = zone_data["Zone"]
+    final_stocks = {} # {ticker: entry_date}
+
+    if not is_weekend_screening:
+        # Weekday: Just keep the old list
+        final_stocks = old_tracked_map
+        logger.info("Weekday mode: Retaining existing list, updating metrics only.")
+    else:
+        # Weekend: Run full screening
+        # Prepare data series
+        atr_state = atr_data["Trend_State"]
+        rs_perc = rs_perc_data["Percentile_1M"]
+        rs_ma = rs_vol_data["RS_MA"]
+        zone_vals = zone_data["Zone"]
+
+        entry_candidates = set() # (ticker, entry_date)
+        keep_candidates = set() # (ticker, entry_date)
+
+        # Helper to get latest scalar
+        def get_latest(df_or_series, ticker):
+            if ticker not in df_or_series.columns: return None
+            series = df_or_series[ticker].dropna()
+            if series.empty: return None
+            return series.iloc[-1]
+
+        for ticker in all_tickers:
+            try:
+                # --- Latest Values for Screening ---
+                t_state = get_latest(atr_state, ticker)
+                perc = get_latest(rs_perc, ticker)
+                zone = get_latest(zone_vals, ticker)
+
+                slope = None
+                if ticker in rs_ma.columns:
+                    ma_series = rs_ma[ticker].dropna()
+                    if len(ma_series) >= 2:
+                        slope = ma_series.iloc[-1] - ma_series.iloc[-2]
+
+                # --- Entry Logic ---
+                is_new_entry = False
+                if (t_state == 3 and
+                    perc is not None and perc >= 80 and
+                    slope is not None and slope > 0 and
+                    zone == 3):
+                    is_new_entry = True
+
+                    # Determine Entry Date
+                    if ticker in old_tracked_map:
+                        entry_date = old_tracked_map[ticker]
+                    else:
+                        entry_date = calculate_entry_date(ticker, atr_state, rs_perc, rs_ma, zone_vals)
+                        if not entry_date:
+                            entry_date = datetime.datetime.now().strftime('%Y-%m-%d') # Fallback
+
+                    entry_candidates.add((ticker, entry_date))
+
+                # --- Persistence Logic (Keep) ---
+                if not is_new_entry and ticker in old_tracked_map:
+                    is_excluded = False
+                    if t_state == 0: is_excluded = True
+                    if zone != 3: is_excluded = True
+
+                    if not is_excluded:
+                        # Keep
+                        entry_date = old_tracked_map[ticker]
+                        keep_candidates.add((ticker, entry_date))
+
+            except Exception as e:
+                continue
+
+        # Combine
+        for t, d in entry_candidates:
+            final_stocks[t] = d
+        for t, d in keep_candidates:
+            final_stocks[t] = d
+
+        logger.info(f"Screening Result: {len(entry_candidates)} entries, {len(keep_candidates)} kept. Total: {len(final_stocks)}")
+
+    # --- Build Output with Metrics (Updated Daily) ---
+    strong_stocks = []
+
     rti_vals = rti_data["RTI_Values"]
 
-    entry_candidates = set() # (ticker, entry_date)
-    keep_candidates = set() # (ticker, entry_date)
-
-    # Helper to get latest scalar
-    def get_latest(df_or_series, ticker):
+    def get_latest_val(df_or_series, ticker):
         if ticker not in df_or_series.columns: return None
         series = df_or_series[ticker].dropna()
         if series.empty: return None
         return series.iloc[-1]
-
-    for ticker in all_tickers:
-        try:
-            # --- Latest Values for Screening ---
-            t_state = get_latest(atr_state, ticker)
-            perc = get_latest(rs_perc, ticker)
-            zone = get_latest(zone_vals, ticker)
-
-            slope = None
-            if ticker in rs_ma.columns:
-                ma_series = rs_ma[ticker].dropna()
-                if len(ma_series) >= 2:
-                    slope = ma_series.iloc[-1] - ma_series.iloc[-2]
-
-            # --- Entry Logic ---
-            is_new_entry = False
-            if (t_state == 3 and
-                perc is not None and perc >= 80 and
-                slope is not None and slope > 0 and
-                zone == 3):
-                is_new_entry = True
-
-                # Determine Entry Date
-                # If already tracked, prefer old date?
-                # Usually yes, keep the original entry date.
-                # But if it's a "New Entry" signal today, maybe it re-triggered?
-                # If it was continuously held, old_tracked_map has the date.
-                # If it fell out and came back, old_tracked_map might not have it (if we rely on latest.json which is yesterday).
-
-                # Check if it is in old_tracked_map
-                if ticker in old_tracked_map:
-                    # It was kept yesterday. Today it meets ENTRY criteria again (stronger).
-                    # Keep original date.
-                    entry_date = old_tracked_map[ticker]
-                else:
-                    # Brand new or Re-entry after absence.
-                    # Run Backtracking to find exact start date.
-                    # Or simple: Today.
-                    # User asked for "Loop backwards" for accuracy on first detection.
-                    entry_date = calculate_entry_date(ticker, atr_state, rs_perc, rs_ma, zone_vals)
-                    if not entry_date:
-                        entry_date = datetime.datetime.now().strftime('%Y-%m-%d') # Fallback
-
-                entry_candidates.add((ticker, entry_date))
-
-            # --- Persistence Logic (Keep) ---
-            # If not a fresh entry, but was tracked, check if we keep it.
-            if not is_new_entry and ticker in old_tracked_map:
-                is_excluded = False
-                if t_state == 0: is_excluded = True
-                if zone != 3: is_excluded = True
-
-                if not is_excluded:
-                    # Keep
-                    entry_date = old_tracked_map[ticker]
-                    keep_candidates.add((ticker, entry_date))
-
-        except Exception as e:
-            continue
-
-    # Combine lists (dict to handle duplicates, preferring Entry set if overlap?)
-    # Overlap means it meets both Entry and Keep.
-    # In my logic, `if not is_new_entry` handles exclusive keep.
-    # So disjoint sets mostly.
-
-    final_stocks = {}
-    for t, d in entry_candidates:
-        final_stocks[t] = d
-    for t, d in keep_candidates:
-        final_stocks[t] = d
-
-    logger.info(f"Screening Result: {len(entry_candidates)} entries, {len(keep_candidates)} kept. Total: {len(final_stocks)}")
-
-    # Build Output
-    strong_stocks = []
 
     def get_price_info(ticker):
         try:
@@ -272,14 +271,40 @@ def apply_screening_logic():
         except: pass
         return 0.0
 
+    def calculate_adr_pct(ticker):
+        """Calculates 20-day Average Daily Range %"""
+        try:
+            # Need High/Low/Close from price_data
+            # Access MultiIndex
+            high = price_data['High'][ticker]
+            low = price_data['Low'][ticker]
+            # close = price_data['Close'][ticker] # Not needed for formula (H/L) but usually normalized by something?
+            # Standard ADR% formula: Mean((High/Low - 1) * 100) over 20 days?
+            # Or (High - Low) / Close?
+            # Memory says: "ADR% (20日間の平均日中変動率)"
+            # Typically: ((High / Low) - 1) * 100
+
+            # Use last 20 days
+            high = high.dropna().tail(20)
+            low = low.dropna().tail(20)
+
+            if len(high) < 20: return 0.0
+
+            daily_ranges = ((high / low) - 1) * 100
+            return daily_ranges.mean()
+        except:
+            return 0.0
+
     for ticker, e_date in final_stocks.items():
-        rti = get_latest(rti_vals, ticker)
+        rti = get_latest_val(rti_vals, ticker)
         price = get_price_info(ticker)
+        adr_pct = calculate_adr_pct(ticker)
 
         stock_obj = {
             "ticker": ticker,
             "rti": round(rti, 2) if rti is not None else 0.0,
             "current_price": round(price, 2),
+            "adr_pct": round(adr_pct, 2),
             "rvol": 0.0,
             "breakout_status": "",
             "entry_date": e_date,
@@ -305,7 +330,7 @@ def generate_charts(stock_list):
         except Exception as e:
             logger.error(f"Failed to generate chart for {ticker}: {e}")
 
-def run_screener_process():
+def run_screener_process(force_weekend_mode=False):
     """Main Orchestrator."""
     logger.info("Starting Screener Process...")
 
@@ -331,35 +356,61 @@ def run_screener_process():
         return {}
 
     end_date = datetime.datetime.now().strftime('%Y-%m-%d')
+    data_date = datetime.datetime.now() # The date of data we are processing
+
     if existing_data is not None and last_date is not None:
          start_date_dl = (last_date + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
          if last_date.date() < datetime.datetime.now().date():
              new_data = download_price_data(symbols, start_date_dl, end_date)
              final_data = merge_price_data(existing_data, new_data) if new_data is not None else existing_data
              save_price_data(final_data)
+             data_date = final_data.index[-1] # Use actual last data date
          else:
              logger.info("Data up to date.")
              final_data = existing_data
+             data_date = final_data.index[-1]
     else:
         final_data = download_price_data(symbols, start_date, end_date)
         if final_data is not None:
             save_price_data(final_data)
+            data_date = final_data.index[-1]
 
     # 3. Run Calculations
     run_calculation_scripts()
 
-    # 4. Screen
-    strong_stocks = apply_screening_logic()
+    # 4. Determine Screening Mode
+    # Weekend Screening if:
+    # - Explicitly forced
+    # - Or today is Friday (weekday 4) AND we have today's data
+    # - Or today is Saturday (5) or Sunday (6) (assuming Friday data is latest)
 
-    # 5. Charts
+    # Note: data_date is a Timestamp.
+    is_friday_data = (data_date.weekday() == 4)
+
+    # Logic: Run full screener if the Latest Data is a Friday (Weekly Close).
+    # Otherwise, just update metrics for existing list.
+    is_weekend_screening = is_friday_data or force_weekend_mode or os.getenv("FORCE_WEEKEND_SCREENING") == "true"
+
+    if not is_weekend_screening and not os.path.exists(LATEST_JSON_PATH):
+        # Fallback: If no previous list exists, must run full screening even if not Friday
+        logger.info("No previous list found. Forcing full screening.")
+        is_weekend_screening = True
+
+    # 5. Screen (with mode)
+    strong_stocks = apply_screening_logic(is_weekend_screening=is_weekend_screening)
+
+    # 6. Charts
     generate_charts(strong_stocks)
 
-    # 6. Save JSON
+    # 7. Notification Logic (Count stocks with ADR% >= 4.0)
+    filtered_count = sum(1 for s in strong_stocks if s.get('adr_pct', 0) >= 4.0)
+
+    # 8. Save JSON
     today_str = datetime.datetime.now().strftime('%Y%m%d')
     output_data = {
         "date": datetime.datetime.now().strftime('%Y-%m-%d'),
         "market_status": "Neutral",
-        "status_text": f"Screened: {len(strong_stocks)}",
+        "status_text": f"Strong Stocks: {filtered_count}", # Updated text for notification
         "strong_stocks": strong_stocks,
         "last_updated": datetime.datetime.now().isoformat()
     }
