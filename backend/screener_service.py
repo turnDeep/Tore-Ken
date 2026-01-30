@@ -256,6 +256,7 @@ def apply_screening_logic(is_weekend_screening=True):
     strong_stocks = []
 
     rti_vals = rti_data["RTI_Values"]
+    rti_sigs = rti_data["RTI_Signals"]
 
     def get_latest_val(df_or_series, ticker):
         if ticker not in df_or_series.columns: return None
@@ -297,12 +298,16 @@ def apply_screening_logic(is_weekend_screening=True):
 
     for ticker, e_date in final_stocks.items():
         rti = get_latest_val(rti_vals, ticker)
+        rti_signal = get_latest_val(rti_sigs, ticker)
+        is_orange_dot = (rti_signal == 2)
+
         price = get_price_info(ticker)
         adr_pct = calculate_adr_pct(ticker)
 
         stock_obj = {
             "ticker": ticker,
             "rti": round(rti, 2) if rti is not None else 0.0,
+            "is_orange_dot": bool(is_orange_dot),
             "current_price": round(price, 2),
             "adr_pct": round(adr_pct, 2),
             "rvol": 0.0,
