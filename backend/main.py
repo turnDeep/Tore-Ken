@@ -253,6 +253,23 @@ def get_market_chart(current_user: str = Depends(get_current_user_for_notificati
          raise HTTPException(status_code=404, detail="Chart image not found.")
     return FileResponse(path)
 
+@app.get("/api/silver-analysis")
+def get_silver_analysis(current_user: str = Depends(get_current_user)):
+    """Returns the silver analysis chart data."""
+    path = os.path.join(DATA_DIR, "silver_analysis.json")
+    if not os.path.exists(path):
+         raise HTTPException(status_code=404, detail="Silver analysis data not found.")
+    with open(path, "r", encoding='utf-8') as f:
+        return json.load(f)
+
+@app.get("/api/silver-chart.png")
+def get_silver_chart(current_user: str = Depends(get_current_user_for_notification)):
+    """Returns the silver analysis chart image. Allows cookie auth for <img> tags."""
+    path = os.path.join(DATA_DIR, "silver_chart.png")
+    if not os.path.exists(path):
+         raise HTTPException(status_code=404, detail="Silver chart image not found.")
+    return FileResponse(path)
+
 @app.get("/api/stock-chart/{filename}")
 def get_stock_chart(filename: str, current_user: str = Depends(get_current_user_for_notification)):
     """Returns a specific stock chart image (e.g., YYYYMMDD-TICKER.png). Allows cookie auth."""
