@@ -153,6 +153,30 @@
                 </div>
             </div>
 
+            <!-- Silver Futures Section -->
+            <div class="market-section">
+                <h3>Silver Futures</h3>
+                <div class="market-analysis-container">
+                    <div id="silver-chart-wrapper" style="position: relative; width: 100%; overflow: hidden;">
+                        <img id="silver-chart-img" src="/api/silver-chart.png" alt="Silver Futures Chart" style="width: 100%; display: block;">
+                        <div id="silver-chart-cursor" style="position: absolute; top: 0; bottom: 0; width: 2px; background-color: black; border-left: 1px dashed black; opacity: 0.3; pointer-events: none; display: none;"></div>
+                    </div>
+
+                    <div class="controls-container">
+                        <button id="silver-prev-btn" class="control-btn">&lt;</button>
+                        <div class="slider-container">
+                             <input type="range" id="silver-date-slider" min="0" max="0" value="0">
+                        </div>
+                        <button id="silver-next-btn" class="control-btn">&gt;</button>
+                    </div>
+
+                    <div style="text-align: center; margin-top: 10px;">
+                        <span id="silver-selected-date" class="date-display">--</span>
+                        <span id="silver-status-badge" class="status-text status-neutral">--</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Strong Stocks Section -->
             <div class="market-section">
                 <div class="strong-stocks-header">
