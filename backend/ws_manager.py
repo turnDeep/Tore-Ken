@@ -57,11 +57,13 @@ class WebSocketManager:
                 data = json.load(f)
 
             strong_stocks = data.get('strong_stocks', [])
-            self.tickers = [s['ticker'] for s in strong_stocks]
+            # Filter for Orange Dot stocks
+            self.tickers = [
+                s['ticker'] for s in strong_stocks
+                if s.get('is_orange_dot') is True and isinstance(s.get('ticker'), str)
+            ]
 
-            # Filter valid tickers
-            self.tickers = [t for t in self.tickers if isinstance(t, str)]
-            logger.info(f"Loaded {len(self.tickers)} tickers for monitoring: {self.tickers}")
+            logger.info(f"Loaded {len(self.tickers)} Orange Dot tickers for monitoring (Total Strong Stocks: {len(strong_stocks)}): {self.tickers}")
 
         except Exception as e:
             logger.error(f"Error loading tickers: {e}")
