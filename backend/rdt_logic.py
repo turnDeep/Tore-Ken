@@ -83,12 +83,11 @@ def detect_cycle_phases(df):
 
     return bullish_phase, bearish_phase
 
-def get_market_analysis_data(period="6mo"):
+def get_market_analysis_data(ticker="SPY", period="6mo"):
     """
-    Fetches SPY data, calculates indicators, and returns a list of dictionaries.
-    Returns: (list_of_dicts, spy_dataframe)
+    Fetches data for a given ticker, calculates indicators, and returns a list of dictionaries.
+    Returns: (list_of_dicts, dataframe)
     """
-    ticker = "SPY"
     try:
         # Use simple download.
         df = yf.download(ticker, period=period, interval="1d", progress=False)
