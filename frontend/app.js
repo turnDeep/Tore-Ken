@@ -566,13 +566,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Match the reference image style
-        // Image shows:
-        // Universe: 5,626 Scanned: 5,557 Matches Found: 7 (We might not have these stats readily available unless passed from backend)
-        // Then list of blocks: [ Ticker (RRS: ..., RVol: ..., ADR%: ...) ]
-
-        // I will implement the list of blocks style.
-
         // Clear content
         contentDiv.innerHTML = '';
 
@@ -590,48 +583,36 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = document.createElement('div');
             item.style.cssText = 'border: 2px solid black; padding: 10px; font-weight: bold; font-size: 0.7em; background: white;';
 
-            // Ticker Line (Line 1)
+            // Line 1: Ticker, RVol, Price
             const line1 = document.createElement('div');
+
+            // Ticker
             const tickerSpan = document.createElement('span');
             tickerSpan.textContent = s.ticker;
-            tickerSpan.style.cssText = 'font-size: 1.6em; cursor: pointer; text-decoration: underline; color: #000;';
+            tickerSpan.style.cssText = 'font-size: 1.6em; cursor: pointer; text-decoration: underline; color: #000; margin-right: 15px;';
             line1.appendChild(tickerSpan);
 
             // RealTime RVol (Magenta)
             const rvolSpan = document.createElement('span');
             rvolSpan.id = `rvol-${s.ticker}`;
-            rvolSpan.style.cssText = 'color: #FF00FF; margin-left: 10px; font-size: 1.2em;';
+            rvolSpan.textContent = `RVol: --`; // Initial placeholder
+            rvolSpan.style.cssText = 'color: #FF00FF; font-size: 1.2em; margin-right: 15px;';
             line1.appendChild(rvolSpan);
 
-            // Indicators Line (Line 2)
-            const line2 = document.createElement('div');
-            line2.textContent = `RRS: ${s.rrs}, RVol: ${s.rvol}, ADR%: ${s.adr_pct}%`;
-            line2.style.fontSize = '1.2em';
-
-            // ATR% Multiple Line (Line 3)
-            const line3 = document.createElement('div');
-            line3.textContent = `ATR% Multiple from 50-MA: ${s.atr_multiple !== undefined ? s.atr_multiple : 'N/A'}`;
-            line3.style.fontSize = '1.2em';
-
-            // VCP Metrics Line (Line 4)
-            const line4 = document.createElement('div');
-            let vcpText = 'VCP Data: N/A';
-            if (s.vcp_metrics) {
-                const m = s.vcp_metrics;
-                const contrStr = m.contractions ? `[${m.contractions.join(', ')}]` : '[]';
-                const tightStr = m.is_tight ? 'Yes' : 'No';
-                const dryUpStr = m.is_dry_up ? 'Yes' : 'No';
-                const qualStr = m.vcp_qualified ? (m.qualified_date ? `Yes (${m.qualified_date.slice(5)})` : 'Yes') : 'No';
-                vcpText = `Contr: ${contrStr} | Tight: ${tightStr} | DryUp: ${dryUpStr} | Qual (5d): ${qualStr}`;
-            }
-            line4.textContent = vcpText;
-            line4.style.fontSize = '1.2em';
-            line4.style.color = '#333';
+            // Price
+            const priceSpan = document.createElement('span');
+            priceSpan.textContent = `Price: $${s.current_price}`;
+            priceSpan.style.cssText = 'font-size: 1.2em; color: #333;';
+            line1.appendChild(priceSpan);
 
             item.appendChild(line1);
+
+            // Line 2: RTI
+            const line2 = document.createElement('div');
+            line2.textContent = `RTI: ${s.rti !== undefined ? s.rti : 'N/A'}`;
+            line2.style.fontSize = '1.2em';
+            line2.style.marginTop = '5px';
             item.appendChild(line2);
-            item.appendChild(line3);
-            item.appendChild(line4);
 
             // Chart Container (Hidden by default)
             const chartContainer = document.createElement('div');
@@ -651,12 +632,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         img.alt = `${s.ticker} Chart`;
                         img.style.maxWidth = '100%';
                         img.style.border = '1px solid #ccc';
-
-                        // Use authenticated fetch logic for image if needed, or simple img src if cookies work
-                        // Since we implemented cookie-based auth for /api/stock-chart/, simple src should work
-                        // IF the browser sends the cookie.
-                        // However, we set the cookie with `SameSite=Strict` or `Lax`.
-                        // Ideally, we can just use the src.
                         img.src = `/api/stock-chart/${s.chart_image}`;
 
                         // Handle error
