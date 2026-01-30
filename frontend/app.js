@@ -561,8 +561,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderStrongStocks(stocks) {
         const contentDiv = document.getElementById('strong-stocks-content');
-        if (!stocks || stocks.length === 0) {
-            contentDiv.innerHTML = '<p style="text-align: center;">No Strong Stocks found.</p>';
+
+        // Filter by ADR% >= 4.0
+        const filteredStocks = stocks.filter(s => (s.adr_pct !== undefined && s.adr_pct >= 4.0));
+
+        // Sort by Entry Date (Newest first)
+        filteredStocks.sort((a, b) => {
+            const dateA = a.entry_date ? new Date(a.entry_date) : new Date(0);
+            const dateB = b.entry_date ? new Date(b.entry_date) : new Date(0);
+            return dateB - dateA; // Descending
+        });
+
+        if (!filteredStocks || filteredStocks.length === 0) {
+            contentDiv.innerHTML = '<p style="text-align: center;">No Strong Stocks (ADR% >= 4) found.</p>';
             return;
         }
 
@@ -572,18 +583,18 @@ document.addEventListener('DOMContentLoaded', () => {
         // Matches Header
         const header = document.createElement('div');
         header.style.cssText = 'margin-bottom: 10px; font-size: 0.9em; text-align: right; color: #555;';
-        header.textContent = `Matches Found: ${stocks.length}`;
+        header.textContent = `Displaying: ${filteredStocks.length} / Total: ${stocks.length}`;
         contentDiv.appendChild(header);
 
         // Container
         const listContainer = document.createElement('div');
         listContainer.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
 
-        stocks.forEach(s => {
+        filteredStocks.forEach(s => {
             const item = document.createElement('div');
             item.style.cssText = 'border: 2px solid black; padding: 10px; font-weight: bold; font-size: 0.7em; background: white;';
 
-            // Line 1: Ticker, RVol, Price
+            // Line 1: Ticker, RVol, Price, ADR%
             const line1 = document.createElement('div');
 
             // Ticker
@@ -602,8 +613,14 @@ document.addEventListener('DOMContentLoaded', () => {
             // Price
             const priceSpan = document.createElement('span');
             priceSpan.textContent = `Price: $${s.current_price}`;
-            priceSpan.style.cssText = 'font-size: 1.2em; color: #333;';
+            priceSpan.style.cssText = 'font-size: 1.2em; color: #333; margin-right: 15px;';
             line1.appendChild(priceSpan);
+
+            // ADR%
+            const adrSpan = document.createElement('span');
+            adrSpan.textContent = `ADR: ${s.adr_pct}%`;
+            adrSpan.style.cssText = 'font-size: 1.2em; color: #333;';
+            line1.appendChild(adrSpan);
 
             item.appendChild(line1);
 
