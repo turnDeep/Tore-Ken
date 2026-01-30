@@ -9,7 +9,7 @@
 ## 2. 主要機能
 
 ### 2.1 Strong Stocks (有望銘柄リスト)
-市場全体の銘柄から、以下の厳格な基準を満たす銘柄を「Strong Stocks」として抽出・表示します。
+市場全体の銘柄から、以下の厳格な基準を満たす銘柄を「Strong Stocks」として抽出します。ダッシュボードには、その中からさらに **ADR% (20日平均変動率) が 4.0% 以上** の「動きのある銘柄」のみが表示されます。
 
 *   **スクリーニング基準 (Entry Criteria)**:
     1.  **ATR Trailing Stop**: Buy状態（強気トレンド）。
@@ -22,12 +22,25 @@
     1.  **ATR Trailing Stop**: Sell状態（弱気トレンド）に転換。
     2.  **Zone RS**: Power Zone から脱落（Dead, Drift, Liftへ移動）。
 
-### 2.2 詳細チャート分析
+*   **運用スケジュール (Weekend Screening)**:
+    *   **週末 (金曜データ更新時)**: 新規採用・除外の判定を行います。週足確定ベースでリストを更新します。
+    *   **平日 (月〜木)**: リストの銘柄は固定したまま、株価やADR%などの指標のみを毎日更新します。
+
+*   **表示順序**:
+    *   エントリー日（リスト入りした日）が新しい順に表示されます。
+
+### 2.2 Market Analysis (市場分析)
+S&P 500 (SPY) の日足チャートと独自のトレンド判定を表示します。
+*   **Green Zone**: 上昇トレンド（積極投資推奨）。
+*   **Red Zone**: 下落トレンド（守備的）。
+*   **Neutral**: 中立。
+
+### 2.3 詳細チャート分析
 リスト内の銘柄を選択すると、詳細なテクニカルチャートが表示されます。
 *   **メインチャート**: ローソク足 + ATR Trailing Stop (緑=Buy, 赤=Sell)。
 *   **サブ指標**: Zone RS, RS Percentile, Volatility Adjusted RS, RTI (Range Tightening Indicator)。
 
-### 2.3 リアルタイム監視
+### 2.4 リアルタイム監視
 *   **Realtime RVol**: 市場開場中、WebSocketを通じてリアルタイムの相対出来高（RVol）を表示。
 
 ## 3. 技術スタック
@@ -47,6 +60,8 @@
 │   ├── screener_service.py         # 新スクリーニング実行サービス (MomentumX)
 │   ├── rdt_data_fetcher.py         # データ取得・増分更新ロジック
 │   ├── chart_generator_mx.py       # MomentumX仕様のチャート生成
+│   ├── market_analysis_logic.py    # 市場分析ロジック (SPY)
+│   ├── market_chart_generator.py   # 市場分析チャート生成
 │   ├── calculate_atr_trailing_stop.py      # ATR計算モジュール
 │   ├── calculate_rs_percentile_histogram.py # RS Percentile計算モジュール
 │   ├── calculate_rs_volatility_adjusted.py # Volatility Adj RS計算モジュール
