@@ -610,16 +610,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // Line 2: RTI & Entry Date
             const line2 = document.createElement('div');
             // Calculate Days Held
-            let daysHeldText = "";
+            let entryInfo = "";
             if (s.entry_date) {
                 const entry = new Date(s.entry_date);
                 const today = new Date();
                 const diffTime = Math.abs(today - entry);
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                daysHeldText = ` | Entry: ${s.entry_date} (${diffDays}d)`;
+                entryInfo = `Entry: ${s.entry_date} (${diffDays}d) | `;
             }
 
-            line2.textContent = `RTI: ${s.rti !== undefined ? s.rti : 'N/A'}${daysHeldText}`;
+            line2.textContent = `${entryInfo}RTI: ${s.rti !== undefined ? s.rti : 'N/A'}`;
             line2.style.fontSize = '1.2em';
             line2.style.marginTop = '5px';
             item.appendChild(line2);
