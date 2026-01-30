@@ -42,6 +42,16 @@ def get_market_analysis_data(ticker="SPY", period="1y"):
             logger.error("Market data download failed")
             return [], pd.DataFrame()
 
+        # Handle MultiIndex columns (Price, Ticker) -> Flatten to just Price
+        if isinstance(df.columns, pd.MultiIndex):
+            # If the second level is the ticker, we can just drop it
+            try:
+                df.columns = df.columns.droplevel('Ticker')
+            except KeyError:
+                # If 'Ticker' level doesn't exist by name, try level 1
+                if df.columns.nlevels > 1:
+                     df.columns = df.columns.droplevel(1)
+
         # Calculate Signals
         df = calculate_trend_signals(df)
 
@@ -54,17 +64,16 @@ def get_market_analysis_data(ticker="SPY", period="1y"):
         stochrsi = ta.stochrsi(df['Close'], length=14, rsi_length=14, k=3, d=3)
         if stochrsi is not None:
             df = pd.concat([df, stochrsi], axis=1)
-            # pandas-ta names columns like STOCHRSIk_14_14_3_3, STOCHRSId_14_14_3_3
-            # Rename for simplicity if needed, or rely on known names.
-            # Usually: STOCHRSIk_..., STOCHRSId_...
-            # Let's verify standard names or use iloc if needed.
-            # Just renaming typical output.
-            df.rename(columns=lambda x: x.replace('STOCHRSIk', 'StochRSI_K').replace('STOCHRSId', 'StochRSI_D'), inplace=True)
-            # Handle standard names if regex didn't catch specific params
-            cols = [c for c in df.columns if 'STOCHRSIk' in c]
-            if cols: df.rename(columns={cols[0]: 'StochRSI_K'}, inplace=True)
-            cols = [c for c in df.columns if 'STOCHRSId' in c]
-            if cols: df.rename(columns={cols[0]: 'StochRSI_D'}, inplace=True)
+            # Find columns that start with STOCHRSIk and STOCHRSId and rename them to exact names
+            k_col = next((c for c in df.columns if 'STOCHRSIk' in c), None)
+            d_col = next((c for c in df.columns if 'STOCHRSId' in c), None)
+
+            rename_dict = {}
+            if k_col: rename_dict[k_col] = 'StochRSI_K'
+            if d_col: rename_dict[d_col] = 'StochRSI_D'
+
+            if rename_dict:
+                df.rename(columns=rename_dict, inplace=True)
 
         # Format for JSON history (Last 6 months only to keep JSON small? Or full period?)
         # Frontend slider needs history. 6 months (approx 126 days) is good default.

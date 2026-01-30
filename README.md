@@ -41,7 +41,8 @@ S&P 500 (SPY) の日足チャートと独自のトレンド判定を表示しま
 *   **サブ指標**: Zone RS, RS Percentile, Volatility Adjusted RS, RTI (Range Tightening Indicator)。
 
 ### 2.4 リアルタイム監視
-*   **Realtime RVol**: 市場開場中、WebSocketを通じてリアルタイムの相対出来高（RVol）を表示。
+*   **Realtime RVol**: 市場開場中、WebSocketを通じてリアルタイムの相対出来高（RVol）を表示します。
+    *   **最適化**: APIリソース節約のため、**RTIシグナル（オレンジドット: 嵐の前の静けさ）** が点灯している「ブレイクアウト直前の銘柄」のみをリアルタイム更新します。それ以外の銘柄は `--` と表示されます。
 
 ## 3. 技術スタック
 
