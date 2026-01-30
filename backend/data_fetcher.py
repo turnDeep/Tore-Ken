@@ -161,6 +161,27 @@ def fetch_and_notify():
         }, f)
     logger.info(f"Saved {analysis_file}")
 
+    # --- Silver Analysis ---
+    logger.info("Generating Silver Futures Analysis Data...")
+    silver_data, silver_df = get_market_analysis_data(period="6mo", ticker="SI=F")
+
+    if silver_data:
+        # Generate Silver Chart
+        silver_chart_path = os.path.join(DATA_DIR, "silver_chart.png")
+        logger.info(f"Generating Silver chart image at {silver_chart_path}...")
+        generate_market_chart(silver_df, silver_chart_path)
+
+        # Save Silver Analysis
+        silver_analysis_file = os.path.join(DATA_DIR, "silver_analysis.json")
+        with open(silver_analysis_file, "w") as f:
+            json.dump({
+                "history": silver_data,
+                "last_updated": datetime.datetime.now().isoformat()
+            }, f)
+        logger.info(f"Saved {silver_analysis_file}")
+    else:
+        logger.error("Failed to generate Silver data.")
+
     # Run Screener for TODAY (using the latest available data)
     logger.info("Running Screener...")
     tickers = load_tickers()
