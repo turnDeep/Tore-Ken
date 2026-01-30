@@ -6,6 +6,9 @@ import logging
 from pywebpush import webpush, WebPushException
 from backend.screener_service import run_screener_process
 from backend.security_manager import security_manager
+# Market Analysis Imports
+from backend.market_analysis_logic import get_market_analysis_data
+from backend.market_chart_generator import generate_market_chart
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -115,7 +118,68 @@ def fetch_and_notify():
     logger.info("Executing fetch_and_notify (New MomentumX Logic)...")
 
     try:
+        # 1. Market Analysis (SPY)
+        logger.info("Generating Market Analysis Data (6 months)...")
+        # get_market_analysis_data returns (market_data_list, spy_df)
+        market_data, spy_df = get_market_analysis_data(period="6mo")
+
+        if market_data:
+            # Generate Chart Image
+            chart_path = os.path.join(DATA_DIR, "market_chart.png")
+            logger.info(f"Generating chart image at {chart_path}...")
+            generate_market_chart(spy_df, chart_path)
+
+            # Save market analysis (History)
+            analysis_file = os.path.join(DATA_DIR, "market_analysis.json")
+            with open(analysis_file, "w") as f:
+                json.dump({
+                    "history": market_data,
+                    "last_updated": datetime.datetime.now().isoformat()
+                }, f)
+            logger.info(f"Saved {analysis_file}")
+        else:
+            logger.error("Failed to generate market data.")
+
+        # 2. MomentumX Screener
         daily_data = run_screener_process()
+
+        # Merge Market Status into daily_data if available
+        if daily_data and market_data:
+            latest_market = market_data[-1]
+            daily_data['market_status'] = latest_market['market_status']
+            daily_data['status_text'] = latest_market['status_text'] # Overwrite "Screened: N" or append?
+            # User wants "Market Analysis is formerly displayed". The frontend uses 'status_text' for the badge.
+            # screener_service sets status_text to "Screened: N".
+            # We should probably combine them or prioritize Market Status.
+            # Frontend app.js uses status_text for badge color (Green/Red).
+            # So we should use the Market Status text.
+
+            # Update the JSON files saved by screener_service?
+            # screener_service saves json inside run_screener_process.
+            # We might need to update those files or modify run_screener_process to accept status.
+            # For now, let's update daily_data here and re-save if we want consistency,
+            # BUT screener_service already wrote to disk.
+
+            # Re-writing the daily JSONs to include Market Status
+            today_str = datetime.datetime.now().strftime('%Y%m%d')
+            json_path = os.path.join(DATA_DIR, f"{today_str}.json")
+            latest_path = os.path.join(DATA_DIR, "latest.json")
+
+            if os.path.exists(json_path):
+                with open(json_path, 'r') as f:
+                    saved_data = json.load(f)
+                saved_data['market_status'] = latest_market['market_status']
+                saved_data['status_text'] = latest_market['status_text']
+                with open(json_path, 'w') as f:
+                    json.dump(saved_data, f)
+
+            if os.path.exists(latest_path):
+                with open(latest_path, 'w') as f:
+                    json.dump(saved_data, f) # Save updated data
+
+            # Update local var for notification
+            daily_data['market_status'] = latest_market['market_status']
+            daily_data['status_text'] = latest_market['status_text']
 
         if daily_data:
             send_push_notifications(daily_data)
