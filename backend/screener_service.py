@@ -130,13 +130,14 @@ def calculate_entry_date(ticker, atr_state_series, rs_perc_series, rs_ma_series,
         logger.error(f"Error calculating entry date for {ticker}: {e}")
         return None
 
-def apply_screening_logic(is_weekend_screening=True):
+def apply_screening_logic(is_weekend_screening=True, data_date=None):
     """
     Applies Entry and Exit logic to determine the list of Strong Stocks.
     Returns a list of dicts.
 
     is_weekend_screening: If True, calculates Entry/Exit/Persistence based on weekly criteria.
                           If False, only updates metrics (ADR%, Price) for existing list.
+    data_date: The date of the data being used (datetime object or Timestamp). Used for versioning filenames.
     """
     logger.info(f"Applying Screening Logic (Weekend Mode: {is_weekend_screening})...")
 
@@ -304,6 +305,9 @@ def apply_screening_logic(is_weekend_screening=True):
         price = get_price_info(ticker)
         adr_pct = calculate_adr_pct(ticker)
 
+        # Determine chart date string
+        chart_date_str = data_date.strftime('%Y%m%d') if data_date else datetime.datetime.now().strftime('%Y%m%d')
+
         stock_obj = {
             "ticker": ticker,
             "rti": round(rti, 2) if rti is not None else 0.0,
@@ -313,13 +317,13 @@ def apply_screening_logic(is_weekend_screening=True):
             "rvol": 0.0,
             "breakout_status": "",
             "entry_date": e_date,
-            "chart_image": f"{datetime.datetime.now().strftime('%Y%m%d')}-{ticker}.png"
+            "chart_image": f"{chart_date_str}-{ticker}.png"
         }
         strong_stocks.append(stock_obj)
 
     return strong_stocks
 
-def generate_charts(stock_list):
+def generate_charts(stock_list, data_date=None):
     """Generates charts for all strong stocks."""
     if not stock_list:
         return
@@ -327,9 +331,12 @@ def generate_charts(stock_list):
     logger.info(f"Generating charts for {len(stock_list)} stocks...")
     generator = RDTChartGenerator()
 
+    # Determine date string for filenames
+    chart_date_str = data_date.strftime('%Y%m%d') if data_date else datetime.datetime.now().strftime('%Y%m%d')
+
     for stock in stock_list:
         ticker = stock['ticker']
-        filename = os.path.join(DATA_DIR, f"{datetime.datetime.now().strftime('%Y%m%d')}-{ticker}.png")
+        filename = os.path.join(DATA_DIR, f"{chart_date_str}-{ticker}.png")
         try:
             generator.generate_chart(ticker, filename)
         except Exception as e:
@@ -361,7 +368,7 @@ def run_screener_process(force_weekend_mode=False):
         return {}
 
     end_date = datetime.datetime.now().strftime('%Y-%m-%d')
-    data_date = datetime.datetime.now() # The date of data we are processing
+    data_date = None
 
     if existing_data is not None and last_date is not None:
          start_date_dl = (last_date + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
@@ -369,16 +376,20 @@ def run_screener_process(force_weekend_mode=False):
              new_data = download_price_data(symbols, start_date_dl, end_date)
              final_data = merge_price_data(existing_data, new_data) if new_data is not None else existing_data
              save_price_data(final_data)
-             data_date = final_data.index[-1] # Use actual last data date
          else:
              logger.info("Data up to date.")
              final_data = existing_data
-             data_date = final_data.index[-1]
     else:
         final_data = download_price_data(symbols, start_date, end_date)
         if final_data is not None:
             save_price_data(final_data)
-            data_date = final_data.index[-1]
+
+    if final_data is not None and not final_data.empty:
+        data_date = final_data.index[-1]
+
+    if data_date is None:
+        logger.error("No data available to process.")
+        return {}
 
     # 3. Run Calculations
     run_calculation_scripts()
@@ -402,18 +413,19 @@ def run_screener_process(force_weekend_mode=False):
         is_weekend_screening = True
 
     # 5. Screen (with mode)
-    strong_stocks = apply_screening_logic(is_weekend_screening=is_weekend_screening)
+    strong_stocks = apply_screening_logic(is_weekend_screening=is_weekend_screening, data_date=data_date)
 
     # 6. Charts
-    generate_charts(strong_stocks)
+    generate_charts(strong_stocks, data_date=data_date)
 
     # 7. Notification Logic (Count stocks with ADR% >= 4.0)
     filtered_count = sum(1 for s in strong_stocks if s.get('adr_pct', 0) >= 4.0)
 
     # 8. Save JSON
-    today_str = datetime.datetime.now().strftime('%Y%m%d')
+    # Use data_date for filenames and content to ensure alignment with Market Analysis
+    today_str = data_date.strftime('%Y%m%d')
     output_data = {
-        "date": datetime.datetime.now().strftime('%Y-%m-%d'),
+        "date": data_date.strftime('%Y-%m-%d'),
         "market_status": "Neutral",
         "status_text": f"Strong Stocks: {filtered_count}", # Updated text for notification
         "strong_stocks": strong_stocks,
