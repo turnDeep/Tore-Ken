@@ -161,7 +161,11 @@ def fetch_and_notify():
             # BUT screener_service already wrote to disk.
 
             # Re-writing the daily JSONs to include Market Status
-            today_str = datetime.datetime.now().strftime('%Y%m%d')
+            # Use date from daily_data to find the correct file
+            today_str = daily_data.get('date', '').replace('-', '')
+            if not today_str:
+                today_str = datetime.datetime.now().strftime('%Y%m%d')
+
             json_path = os.path.join(DATA_DIR, f"{today_str}.json")
             latest_path = os.path.join(DATA_DIR, "latest.json")
 
