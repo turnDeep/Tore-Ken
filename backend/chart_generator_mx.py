@@ -10,6 +10,16 @@ class RDTChartGenerator:
         self.fetcher = RDTDataFetcher()
         self.data_folder = "data"
 
+        # Pre-load data to avoid repeated I/O during loops
+        print("Loading data for Chart Generator...")
+        self.zone_rs_data = self.load_pickle_data("zone_rs_weekly.pkl")
+        self.rs_perc_data = self.load_pickle_data("rs_percentile_histogram_weekly.pkl")
+        self.rs_vol_data = self.load_pickle_data("rs_volatility_adjusted_weekly.pkl")
+        self.rti_data = self.load_pickle_data("rti_weekly.pkl")
+        self.atr_ts_data = self.load_pickle_data("atr_trailing_stop_weekly.pkl")
+        self.price_pkl = self.load_pickle_data("price_data_ohlcv.pkl")
+        print("Data loaded.")
+
     def load_pickle_data(self, filename):
         path = os.path.join(self.data_folder, filename)
         if os.path.exists(path):
@@ -19,16 +29,13 @@ class RDTChartGenerator:
     def generate_chart(self, ticker, output_filename=None):
         print(f"Generating chart for {ticker}...")
 
-        # 1. Load Data
-        # Load Weekly Indicators
-        zone_rs_data = self.load_pickle_data("zone_rs_weekly.pkl")
-        rs_perc_data = self.load_pickle_data("rs_percentile_histogram_weekly.pkl")
-        rs_vol_data = self.load_pickle_data("rs_volatility_adjusted_weekly.pkl")
-        rti_data = self.load_pickle_data("rti_weekly.pkl")
-        atr_ts_data = self.load_pickle_data("atr_trailing_stop_weekly.pkl")
-
-        # Load Raw Price (Daily) and Resample to Weekly for Main Chart
-        price_pkl = self.load_pickle_data("price_data_ohlcv.pkl")
+        # Use pre-loaded data
+        zone_rs_data = self.zone_rs_data
+        rs_perc_data = self.rs_perc_data
+        rs_vol_data = self.rs_vol_data
+        rti_data = self.rti_data
+        atr_ts_data = self.atr_ts_data
+        price_pkl = self.price_pkl
 
         if price_pkl is None:
             print("Error: price_data_ohlcv.pkl not found.")
