@@ -36,7 +36,12 @@ def generate_market_chart(df, output_path):
             apds.append(mpf.make_addplot(df['TSV_MA'], panel=1, color='orange', width=1.0))
 
     # --- Panel 2: StochRSI ---
-    if 'StochRSI_K' in df.columns and 'StochRSI_D' in df.columns:
+    # Legacy logic uses 'Fast_K' and 'Slow_D'
+    if 'Fast_K' in df.columns and 'Slow_D' in df.columns:
+        apds.append(mpf.make_addplot(df['Fast_K'], panel=2, color='blue', width=1.0, ylabel='StochRSI'))
+        apds.append(mpf.make_addplot(df['Slow_D'], panel=2, color='orange', width=1.0))
+    # Fallback to StochRSI_K/D if provided (not legacy path but safe)
+    elif 'StochRSI_K' in df.columns and 'StochRSI_D' in df.columns:
         apds.append(mpf.make_addplot(df['StochRSI_K'], panel=2, color='blue', width=1.0, ylabel='StochRSI'))
         apds.append(mpf.make_addplot(df['StochRSI_D'], panel=2, color='orange', width=1.0))
 
