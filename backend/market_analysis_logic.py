@@ -91,7 +91,7 @@ def get_market_analysis_data(ticker="SPY", period="6mo"):
     """
     try:
         # Use simple download.
-        df = yf.download(ticker, period=period, interval="1d", progress=False, auto_adjust=True)
+        df = yf.download(ticker, period=period, interval="1d", progress=False)
         if df.empty:
             logger.error("Market data download failed")
             return [], pd.DataFrame()
