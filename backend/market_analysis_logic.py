@@ -1,122 +1,195 @@
 import pandas as pd
 import pandas_ta as ta
-import yfinance as yf
 import numpy as np
-from datetime import datetime, timedelta
+import yfinance as yf
+import datetime
 import logging
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def calculate_trend_signals(df):
-    """
-    Calculates the Market Trend Signal (Green/Red/Neutral) based on RDT logic.
-    Green: Price > 5d MA > 20d MA > 50d MA (Perfect Order)
-    Red: Price < 5d MA < 20d MA < 50d MA
-    Neutral: Otherwise
-    """
-    # Simple Moving Averages
-    df['SMA_5'] = ta.sma(df['Close'], length=5)
-    df['SMA_20'] = ta.sma(df['Close'], length=20)
-    df['SMA_50'] = ta.sma(df['Close'], length=50)
+def calculate_wma(series, length):
+    """Calculates Weighted Moving Average (WMA)."""
+    weights = np.arange(1, length + 1)
+    sum_weights = weights.sum()
+    return series.rolling(window=length).apply(lambda x: np.dot(x, weights) / sum_weights, raw=True)
 
-    conditions = [
-        (df['Close'] > df['SMA_5']) & (df['SMA_5'] > df['SMA_20']) & (df['SMA_20'] > df['SMA_50']),
-        (df['Close'] < df['SMA_5']) & (df['SMA_5'] < df['SMA_20']) & (df['SMA_20'] < df['SMA_50'])
-    ]
-    choices = [1, -1] # 1: Green, -1: Red
-    df['Trend_Signal'] = np.select(conditions, choices, default=0) # 0: Neutral
-
-    return df
-
-def get_market_analysis_data(ticker="SPY", period="1y"):
+def calculate_tsv_approximation(df, length=13, ma_length=7, ma_type='EMA'):
     """
-    Fetches market data (SPY), calculates trend signals, and prepares data for the frontend/chart.
-    Returns: (list_of_dicts_for_json, dataframe_for_chart)
+    Calculates Time Segmented Volume (TSV) approximation.
+    """
+    price_change = df['Close'].diff()
+    signed_volume = df['Volume'] * price_change
+    tsv_raw = signed_volume.rolling(window=length).sum()
+
+    if ma_type == 'EMA':
+        tsv_smoothed = tsv_raw.ewm(span=ma_length, adjust=False).mean()
+    elif ma_type == 'SMA':
+        tsv_smoothed = tsv_raw.rolling(window=ma_length).mean()
+    else:
+        tsv_smoothed = tsv_raw.rolling(window=ma_length).mean()
+
+    return tsv_smoothed
+
+def calculate_stochrsi_1op(df, rsi_length=14, stoch_length=14, k_smooth=5, d_smooth=5):
+    """
+    Calculates StochRSI with HEAVIER WMA smoothing (5, 5) to mimic 1OP cycles.
+    """
+    rsi = ta.rsi(df['Close'], length=rsi_length)
+    rsi_low = rsi.rolling(window=stoch_length).min()
+    rsi_high = rsi.rolling(window=stoch_length).max()
+
+    denominator = rsi_high - rsi_low
+    denominator = denominator.replace(0, np.nan)
+
+    stoch_raw = ((rsi - rsi_low) / denominator) * 100
+    stoch_raw = stoch_raw.fillna(50)
+
+    k_line = calculate_wma(stoch_raw, k_smooth)
+    d_line = calculate_wma(k_line, d_smooth)
+
+    return k_line, d_line
+
+def detect_cycle_phases(df):
+    """
+    Detects Bullish and Bearish Cycle Phases based on StochRSI Crosses.
+    """
+    if 'Fast_K' not in df.columns or 'Slow_D' not in df.columns:
+        return None, None
+
+    k = df['Fast_K'].values
+    d = df['Slow_D'].values
+
+    bullish_phase = np.zeros(len(df), dtype=bool)
+    bearish_phase = np.zeros(len(df), dtype=bool)
+
+    # State: 0 = Neutral/Unknown, 1 = Bullish, -1 = Bearish
+    state = 0
+
+    for i in range(1, len(df)):
+        # Check Crosses
+        cross_up = (k[i-1] <= d[i-1]) and (k[i] > d[i])
+        cross_down = (k[i-1] >= d[i-1]) and (k[i] < d[i])
+
+        if cross_up:
+            state = 1
+        elif cross_down:
+            state = -1
+
+        if state == 1:
+            bullish_phase[i] = True
+        elif state == -1:
+            bearish_phase[i] = True
+
+    return bullish_phase, bearish_phase
+
+def get_market_analysis_data(ticker="SPY", period="6mo"):
+    """
+    Fetches SPY data, calculates indicators, and returns a list of dictionaries.
+    Returns: (list_of_dicts, spy_dataframe)
     """
     try:
-        # Fetch Data
-        df = yf.download(ticker, period=period, progress=False, ignore_tz=True)
+        # Use simple download.
+        df = yf.download(ticker, period=period, interval="1d", progress=False, auto_adjust=True)
         if df.empty:
             logger.error("Market data download failed")
             return [], pd.DataFrame()
 
         # Handle MultiIndex columns (Price, Ticker) -> Flatten to just Price
         if isinstance(df.columns, pd.MultiIndex):
-            # If the second level is the ticker, we can just drop it
             try:
                 df.columns = df.columns.droplevel('Ticker')
             except KeyError:
-                # If 'Ticker' level doesn't exist by name, try level 1
                 if df.columns.nlevels > 1:
                      df.columns = df.columns.droplevel(1)
 
-        # Calculate Signals
-        df = calculate_trend_signals(df)
+        # Ensure Index is tz-naive
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
 
-        # Additional Indicators for Chart (TSV approx, StochRSI)
-        # TSV Approximation: (Close - Close[1]) * Volume
-        df['TSV'] = df['Close'].diff() * df['Volume']
-        df['TSV_MA'] = ta.sma(df['TSV'], length=13)
+        df.columns = [c.capitalize() for c in df.columns]
 
-        # StochRSI
-        stochrsi = ta.stochrsi(df['Close'], length=14, rsi_length=14, k=3, d=3)
-        if stochrsi is not None:
-            df = pd.concat([df, stochrsi], axis=1)
-            # Find columns that start with STOCHRSIk and STOCHRSId and rename them to exact names
-            k_col = next((c for c in df.columns if 'STOCHRSIk' in c), None)
-            d_col = next((c for c in df.columns if 'STOCHRSId' in c), None)
+        # Indicators
+        df['TSV'] = calculate_tsv_approximation(df, length=12, ma_length=7, ma_type='EMA')
+        df['Fast_K'], df['Slow_D'] = calculate_stochrsi_1op(df, rsi_length=14, stoch_length=14, k_smooth=5, d_smooth=5)
 
-            rename_dict = {}
-            if k_col: rename_dict[k_col] = 'StochRSI_K'
-            if d_col: rename_dict[d_col] = 'StochRSI_D'
+        # Phases
+        bull_mask, bear_mask = detect_cycle_phases(df)
+        df['Bullish_Phase'] = bull_mask
+        df['Bearish_Phase'] = bear_mask
 
-            if rename_dict:
-                df.rename(columns=rename_dict, inplace=True)
+        # Generate Trend Signal for Chart Generator (1: Bull, -1: Bear, 0: Neutral)
+        # The legacy logic uses statuses like "Green", "Red", "Neutral".
+        # Chart generator expects 'Trend_Signal' column with 1, -1, 0.
+        conditions = [df['Bullish_Phase'] == True, df['Bearish_Phase'] == True]
+        choices = [1, -1]
+        df['Trend_Signal'] = np.select(conditions, choices, default=0)
 
-        # Format for JSON history (Last 6 months only to keep JSON small? Or full period?)
-        # Frontend slider needs history. 6 months (approx 126 days) is good default.
-        # "Market Analysis 6ヶ月チャート"
+        results = []
+        for i in range(len(df)):
+            date = df.index[i]
+            date_key = date.strftime('%Y%m%d')
+            date_str = date.strftime('%Y/%-m/%-d')
 
-        start_date = df.index[-1] - pd.DateOffset(months=6)
-        history_df = df.loc[start_date:].copy()
+            is_bull = bool(df['Bullish_Phase'].iloc[i])
+            is_bear = bool(df['Bearish_Phase'].iloc[i])
 
-        market_data_list = []
+            current_status = "Green" if is_bull else ("Red" if is_bear else "Neutral")
 
-        # Helper to generate status text
-        def get_status_text(row, prev_row):
-            sig = row['Trend_Signal']
-            if prev_row is None:
-                prev_sig = 0
+            if i > 0:
+                prev_bull = bool(df['Bullish_Phase'].iloc[i-1])
+                prev_bear = bool(df['Bearish_Phase'].iloc[i-1])
+                prev_status = "Green" if prev_bull else ("Red" if prev_bear else "Neutral")
             else:
-                prev_sig = prev_row['Trend_Signal']
+                prev_status = "Neutral"
 
-            if sig == 1:
-                return "Green Zone" if prev_sig == 1 else "to Green Zone"
-            elif sig == -1:
-                return "Red Zone" if prev_sig == -1 else "to Red Zone"
+            status_text = ""
+            status_color = "Green" # Default?
+
+            # Replicate legacy text logic
+            if current_status == "Green":
+                status_color = "Green"
+                if prev_status == "Red":
+                    status_text = "Red to Green"
+                elif prev_status == "Green":
+                    status_text = "still Green"
+                else:
+                    status_text = "Start Green"
+            elif current_status == "Red":
+                status_color = "Red"
+                if prev_status == "Green":
+                    status_text = "Green to Red"
+                elif prev_status == "Red":
+                    status_text = "still Red"
+                else:
+                    status_text = "Start Red"
             else:
-                return "Neutral"
+                status_text = "Neutral"
+                status_color = "Gray"
 
-        for i in range(len(history_df)):
-            row = history_df.iloc[i]
-            prev_row = history_df.iloc[i-1] if i > 0 else None
+            # Map legacy status color to frontend expectations if needed
+            # Frontend uses status_text for badge color logic:
+            # includes "Red to" -> Green badge (bullish reversal)
+            # includes "Green to" -> Red badge (bearish reversal)
+            # includes "Green" -> Green
+            # includes "Red" -> Red
 
-            date_str = row.name.strftime('%Y-%m-%d')
-            date_key = row.name.strftime('%Y%m%d')
-
-            status_text = get_status_text(row, prev_row)
-
-            market_data_list.append({
-                "date": date_str,
+            results.append({
                 "date_key": date_key,
-                "market_status": "Bull" if row['Trend_Signal'] == 1 else "Bear" if row['Trend_Signal'] == -1 else "Neutral",
-                "status_text": status_text,
-                "close": round(row['Close'], 2)
+                "date": date_str,
+                "open": float(df['Open'].iloc[i]),
+                "high": float(df['High'].iloc[i]),
+                "low": float(df['Low'].iloc[i]),
+                "close": float(df['Close'].iloc[i]),
+                "tsv": float(df['TSV'].iloc[i]) if not pd.isna(df['TSV'].iloc[i]) else None,
+                "fast_k": float(df['Fast_K'].iloc[i]) if not pd.isna(df['Fast_K'].iloc[i]) else None,
+                "slow_d": float(df['Slow_D'].iloc[i]) if not pd.isna(df['Slow_D'].iloc[i]) else None,
+                "market_status": status_color, # Legacy field
+                "status_text": status_text
             })
 
-        return market_data_list, history_df
+        return results, df
 
     except Exception as e:
         logger.error(f"Error in get_market_analysis_data: {e}")
