@@ -128,8 +128,27 @@ def fetch_and_notify():
             chart_path = os.path.join(DATA_DIR, "market_chart.png")
             logger.info(f"Generating chart image at {chart_path}...")
             generate_market_chart(spy_df, chart_path)
+        else:
+            logger.error("Failed to generate market data.")
 
-            # Save market analysis (History)
+        # 2. MomentumX Screener
+        daily_data = run_screener_process()
+
+        # 3. Synchronize and Save Market Analysis
+        # Ensure Market Analysis history does not exceed the Screener Date
+        if market_data:
+            if daily_data and 'date' in daily_data:
+                screener_date_str = daily_data['date'].replace('-', '') # YYYY-MM-DD -> YYYYMMDD
+
+                # Filter market_data to not exceed screener date
+                original_len = len(market_data)
+                market_data = [d for d in market_data if d['date_key'] <= screener_date_str]
+                new_len = len(market_data)
+
+                if new_len < original_len:
+                    logger.warning(f"Truncated Market Analysis history from {original_len} to {new_len} entries to match Screener Date {screener_date_str}.")
+
+            # Save market_analysis.json (Now synchronized)
             analysis_file = os.path.join(DATA_DIR, "market_analysis.json")
             with open(analysis_file, "w") as f:
                 json.dump({
@@ -137,14 +156,9 @@ def fetch_and_notify():
                     "last_updated": datetime.datetime.now().isoformat()
                 }, f)
             logger.info(f"Saved {analysis_file}")
-        else:
-            logger.error("Failed to generate market data.")
-
-        # 2. MomentumX Screener
-        daily_data = run_screener_process()
 
         # Merge Market Status into daily_data if available
-        if daily_data and market_data:
+        if daily_data and market_data and len(market_data) > 0:
             latest_market = market_data[-1]
             daily_data['market_status'] = latest_market['market_status']
             daily_data['status_text'] = latest_market['status_text'] # Overwrite "Screened: N" or append?
