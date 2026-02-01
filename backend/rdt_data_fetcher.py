@@ -108,10 +108,8 @@ def get_unique_symbols(symbol_limit=None, override_start_date=None):
                     start_date = START_DATE
                     logging.info(f"Base start date: {start_date} (from config)")
                 else:
-                    start_date = (datetime.now() - timedelta(days=365*5)).strftime('%Y-%m-%d')
-                    logging.info(f"Base start date: {start_date} (5 years before today, default)")
-                    start_date = (datetime.now() - timedelta(days=365*5)).strftime('%Y-%m-%d')
-                    logging.info(f"Base start date: {start_date} (5 years before today, default)")
+                    start_date = (datetime.now() - timedelta(days=365*10)).strftime('%Y-%m-%d')
+                    logging.info(f"Base start date: {start_date} (10 years before today, default)")
 
                 if symbol_limit is not None and symbol_limit > 0:
                     logging.info(f"Limiting to {symbol_limit} symbols for this run.")
@@ -149,8 +147,8 @@ def get_unique_symbols(symbol_limit=None, override_start_date=None):
                     start_date = START_DATE
                     logging.info(f"Base start date: {start_date} (from config)")
                 else:
-                    start_date = (datetime.now() - timedelta(days=180)).strftime('%Y-%m-%d')
-                    logging.info(f"Base start date: {start_date} (6 months before today, default)")
+                    start_date = (datetime.now() - timedelta(days=365*10)).strftime('%Y-%m-%d')
+                    logging.info(f"Base start date: {start_date} (10 years before today, default)")
 
                 if symbol_limit is not None and symbol_limit > 0:
                     logging.info(f"Limiting to {symbol_limit} symbols for this run.")
@@ -197,7 +195,7 @@ def get_unique_symbols(symbol_limit=None, override_start_date=None):
             start_date = START_DATE
             logging.info(f"Using config start date: {start_date}")
         else:
-            start_date = (datetime.now() - timedelta(days=365*2)).strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=365*10)).strftime('%Y-%m-%d')
             logging.info(f"Defaulting to start date: {start_date}")
 
     logging.info(f"Found {len(excel_files)} Excel files. Reading symbols...")
