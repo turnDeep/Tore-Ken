@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 def generate_market_chart(df, output_path):
     """
-    Generates the Market Analysis chart (SPY) with trend background colors.
+    Generates the Market Analysis chart (Generic/Gold) with trend background colors.
     """
     if df.empty:
         logger.error("No market data to plot")
