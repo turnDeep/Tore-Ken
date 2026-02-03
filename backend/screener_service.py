@@ -9,6 +9,7 @@ import sys
 from backend.get_tickers import update_stock_csv_from_fmp
 from backend.rdt_data_fetcher import get_unique_symbols, download_price_data, merge_price_data, save_price_data, load_existing_price_data
 from backend.chart_generator_mx import RDTChartGenerator
+from backend.fundamental_analysis import analyze_tickers_in_batch
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -414,6 +415,22 @@ def run_screener_process(force_weekend_mode=False):
 
     # 5. Screen (with mode)
     strong_stocks = apply_screening_logic(is_weekend_screening=is_weekend_screening, data_date=data_date)
+
+    # Fundamental Analysis
+    if strong_stocks:
+        tickers_to_analyze = [s['ticker'] for s in strong_stocks]
+        logger.info("Running fundamental analysis...")
+        fund_results = analyze_tickers_in_batch(tickers_to_analyze, delay=0.5)
+
+        # Merge results
+        for s in strong_stocks:
+            ticker = s['ticker']
+            if ticker in fund_results:
+                res = fund_results[ticker]
+                s['earnings_accel'] = res['earnings']['accelerating']
+                s['revenue_accel'] = res['revenue']['accelerating']
+                s['earnings_display'] = res['earnings']['display']
+                s['revenue_display'] = res['revenue']['display']
 
     # 6. Charts
     generate_charts(strong_stocks, data_date=data_date)

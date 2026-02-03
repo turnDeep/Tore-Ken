@@ -591,8 +591,19 @@ document.addEventListener('DOMContentLoaded', () => {
         listContainer.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
 
         filteredStocks.forEach(s => {
+            // Logic for border styling
+            const revAccel = s.revenue_accel === true;
+            const epsAccel = s.earnings_accel === true;
+            let borderStyle = '2px solid black';
+
+            if (revAccel && epsAccel) {
+                borderStyle = '3px solid blue';
+            } else if (revAccel || epsAccel) {
+                borderStyle = '2px solid blue';
+            }
+
             const item = document.createElement('div');
-            item.style.cssText = 'border: 2px solid black; padding: 10px; font-weight: bold; font-size: 0.7em; background: white;';
+            item.style.cssText = `border: ${borderStyle}; padding: 10px; font-weight: bold; font-size: 0.7em; background: white;`;
 
             // Line 1: Ticker, RVol, Price, ADR%
             const line1 = document.createElement('div');
@@ -640,6 +651,24 @@ document.addEventListener('DOMContentLoaded', () => {
             line2.style.fontSize = '1.2em';
             line2.style.marginTop = '5px';
             item.appendChild(line2);
+
+            // Line 3: Fundamentals
+            if (s.revenue_display || s.earnings_display) {
+                const line3 = document.createElement('div');
+                line3.style.cssText = 'font-size: 1.1em; margin-top: 5px; color: #333; display: flex; flex-direction: column;';
+
+                if (s.revenue_display) {
+                    const revSpan = document.createElement('span');
+                    revSpan.textContent = s.revenue_display;
+                    line3.appendChild(revSpan);
+                }
+                if (s.earnings_display) {
+                    const epsSpan = document.createElement('span');
+                    epsSpan.textContent = s.earnings_display;
+                    line3.appendChild(epsSpan);
+                }
+                item.appendChild(line3);
+            }
 
             // Chart Container (Hidden by default)
             const chartContainer = document.createElement('div');
