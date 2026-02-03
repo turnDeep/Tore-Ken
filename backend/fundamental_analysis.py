@@ -52,7 +52,7 @@ def analyze_earnings_qoq(ticker):
         hist_accel = bool(g_latest_actual_qoq > g_prev_actual_qoq)
 
         # 2. Estimates Acceleration
-        est_accel = False
+        est_accel = True # Assume true until proven false
         g_0q_qoq = None
         g_1q_qoq = None
 
@@ -74,16 +74,29 @@ def analyze_earnings_qoq(ticker):
                 if val_1q is not None and val_0q is not None:
                     g_1q_qoq = get_growth_rate(val_1q, val_0q)
 
-                cond1 = False
-                cond2 = False
-
+                # Check 0q vs Latest (Non-Decreasing)
                 if g_0q_qoq is not None:
-                    cond1 = bool(g_0q_qoq > g_latest_actual_qoq)
+                    if g_0q_qoq < g_latest_actual_qoq:
+                        est_accel = False
 
+                # Check 1q vs 0q (Non-Decreasing)
                 if g_1q_qoq is not None and g_0q_qoq is not None:
-                    cond2 = bool(g_1q_qoq > g_0q_qoq)
+                    if g_1q_qoq < g_0q_qoq:
+                        est_accel = False
 
-                est_accel = bool(cond1 or cond2)
+                # If no estimates available, est_accel stays True (relying on hist)?
+                # Or require at least one estimate?
+                # User request implies "Accelerating in order".
+                # If data is missing, we can't confirm "in order acceleration".
+                if g_0q_qoq is None and g_1q_qoq is None:
+                     # No future data, so cannot confirm future acceleration.
+                     # However, if only hist is present, is it "accelerating"?
+                     # Usually "growth acceleration" requires looking ahead if available.
+                     # Let's say if NO estimates, default to True (neutral) or False?
+                     # Given the prompt emphasizes the sequence displayed, if only 2 items are displayed (Prev->Latest),
+                     # and they accelerate, then it is accelerating.
+                     pass
+
 
         except Exception as e:
             # logger.warning(f"Error fetching earnings estimates: {e}")
@@ -141,7 +154,7 @@ def analyze_revenue_qoq(ticker):
         hist_accel = bool(g_latest_actual_qoq > g_prev_actual_qoq)
 
         # Estimates
-        est_accel = False
+        est_accel = True
         g_0q_qoq = None
         g_1q_qoq = None
 
@@ -163,16 +176,15 @@ def analyze_revenue_qoq(ticker):
                 if val_1q is not None and val_0q is not None:
                     g_1q_qoq = get_growth_rate(val_1q, val_0q)
 
-                cond1 = False
-                cond2 = False
-
+                # Check 0q vs Latest (Non-Decreasing)
                 if g_0q_qoq is not None:
-                    cond1 = bool(g_0q_qoq > g_latest_actual_qoq)
+                    if g_0q_qoq < g_latest_actual_qoq:
+                        est_accel = False
 
+                # Check 1q vs 0q (Non-Decreasing)
                 if g_1q_qoq is not None and g_0q_qoq is not None:
-                    cond2 = bool(g_1q_qoq > g_0q_qoq)
-
-                est_accel = bool(cond1 or cond2)
+                    if g_1q_qoq < g_0q_qoq:
+                        est_accel = False
 
         except Exception as e:
             # logger.warning(f"Error fetching revenue estimates: {e}")
