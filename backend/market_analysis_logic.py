@@ -91,7 +91,8 @@ def get_market_analysis_data(ticker="GLD", period="6mo"):
     """
     try:
         # Use simple download.
-        df = yf.download(ticker, period=period, interval="1d", progress=False)
+        # Fetch 1h data to serve as base, allowing 4h overlay
+        df = yf.download(ticker, period=period, interval="1h", progress=False)
         if df.empty:
             logger.error("Market data download failed")
             return [], pd.DataFrame()
@@ -114,9 +115,11 @@ def get_market_analysis_data(ticker="GLD", period="6mo"):
         df['TSV'] = calculate_tsv_approximation(df, length=12, ma_length=7, ma_type='EMA')
         df['Fast_K'], df['Slow_D'] = calculate_stochrsi_1op(df, rsi_length=14, stoch_length=14, k_smooth=5, d_smooth=5)
 
-        # Calculate Weekly StochRSI for Charting (Panel 1 Replacement)
-        # Resample to Weekly
-        df_weekly = df.resample('W-FRI').agg({
+        # Calculate 4-Hour StochRSI for Charting (Panel 1 Replacement)
+        # Resample to 4-Hour
+        # Note: resample('4h') might need specific offset handling if market hours don't align perfectly,
+        # but standard resample usually works well enough for approximation.
+        df_4h = df.resample('4h').agg({
             'Open': 'first',
             'High': 'max',
             'Low': 'min',
@@ -124,15 +127,15 @@ def get_market_analysis_data(ticker="GLD", period="6mo"):
             'Volume': 'sum'
         }).dropna()
 
-        # Calculate StochRSI on Weekly Data
-        wk_k, wk_d = calculate_stochrsi_1op(df_weekly, rsi_length=14, stoch_length=14, k_smooth=5, d_smooth=5)
-        df_weekly['Weekly_Fast_K'] = wk_k
-        df_weekly['Weekly_Slow_D'] = wk_d
+        # Calculate StochRSI on 4-Hour Data
+        h4_k, h4_d = calculate_stochrsi_1op(df_4h, rsi_length=14, stoch_length=14, k_smooth=5, d_smooth=5)
+        df_4h['4h_Fast_K'] = h4_k
+        df_4h['4h_Slow_D'] = h4_d
 
-        # Merge Weekly StochRSI back to Daily (Forward Fill)
-        # Use reindex with method='ffill' to align weekly values to daily dates
-        df['Weekly_Fast_K'] = df_weekly['Weekly_Fast_K'].reindex(df.index, method='ffill')
-        df['Weekly_Slow_D'] = df_weekly['Weekly_Slow_D'].reindex(df.index, method='ffill')
+        # Merge 4-Hour StochRSI back to Hourly (Forward Fill)
+        # Use reindex with method='ffill' to align 4h values to hourly dates
+        df['4h_Fast_K'] = df_4h['4h_Fast_K'].reindex(df.index, method='ffill')
+        df['4h_Slow_D'] = df_4h['4h_Slow_D'].reindex(df.index, method='ffill')
 
         # Phases
         bull_mask, bear_mask = detect_cycle_phases(df)
