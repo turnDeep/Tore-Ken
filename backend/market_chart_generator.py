@@ -26,9 +26,16 @@ def generate_market_chart(df, output_path):
     # Prepare AddPlots
     apds = []
 
-    # --- Panel 1: TSV (Approx) ---
-    if 'TSV' in df.columns:
-        # TSV line color: Teal (similar to image)
+    # --- Panel 1: Weekly StochRSI (Replaces TSV) ---
+    if 'Weekly_Fast_K' in df.columns and 'Weekly_Slow_D' in df.columns:
+        # 80/20 lines for Weekly
+        apds.append(mpf.make_addplot(np.full(len(df), 80), panel=1, color='red', linestyle=':', width=1.0, secondary_y=False))
+        apds.append(mpf.make_addplot(np.full(len(df), 20), panel=1, color='green', linestyle=':', width=1.0, secondary_y=False))
+
+        apds.append(mpf.make_addplot(df['Weekly_Fast_K'], panel=1, color='cyan', width=1.5, ylabel='Weekly StochRSI'))
+        apds.append(mpf.make_addplot(df['Weekly_Slow_D'], panel=1, color='orange', width=1.5))
+    elif 'TSV' in df.columns:
+        # Fallback to TSV if Weekly StochRSI is missing
         apds.append(mpf.make_addplot(df['TSV'], panel=1, color='teal', width=1.5, ylabel='TSV'))
         if 'TSV_MA' in df.columns:
             apds.append(mpf.make_addplot(df['TSV_MA'], panel=1, color='orange', width=1.0))
