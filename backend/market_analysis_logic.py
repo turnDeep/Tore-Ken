@@ -84,10 +84,10 @@ def detect_cycle_phases(df):
 
     return bullish_phase, bearish_phase
 
-def get_market_analysis_data(ticker="SPY", period="6mo"):
+def get_market_analysis_data(ticker="GLD", period="6mo"):
     """
-    Fetches SPY data, calculates indicators, and returns a list of dictionaries.
-    Returns: (list_of_dicts, spy_dataframe)
+    Fetches Market Analysis data (default GLD), calculates indicators, and returns a list of dictionaries.
+    Returns: (list_of_dicts, market_dataframe)
     """
     try:
         # Use simple download.
