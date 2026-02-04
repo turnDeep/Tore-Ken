@@ -118,16 +118,16 @@ def fetch_and_notify():
     logger.info("Executing fetch_and_notify (New MomentumX Logic)...")
 
     try:
-        # 1. Market Analysis (SPY)
-        logger.info("Generating Market Analysis Data (6 months)...")
-        # get_market_analysis_data returns (market_data_list, spy_df)
-        market_data, spy_df = get_market_analysis_data(period="6mo")
+        # 1. Market Analysis (GLD)
+        logger.info("Generating Market Analysis Data (6 months) for GLD...")
+        # get_market_analysis_data returns (market_data_list, market_df)
+        market_data, market_df = get_market_analysis_data(ticker="GLD", period="6mo")
 
         if market_data:
             # Generate Chart Image
             chart_path = os.path.join(DATA_DIR, "market_chart.png")
             logger.info(f"Generating chart image at {chart_path}...")
-            generate_market_chart(spy_df, chart_path)
+            generate_market_chart(market_df, chart_path)
 
             # Save market analysis (History)
             analysis_file = os.path.join(DATA_DIR, "market_analysis.json")
