@@ -114,6 +114,51 @@ def get_market_analysis_data(ticker="SPY", period="6mo"):
         df['TSV'] = calculate_tsv_approximation(df, length=12, ma_length=7, ma_type='EMA')
         df['Fast_K'], df['Slow_D'] = calculate_stochrsi_1op(df, rsi_length=14, stoch_length=14, k_smooth=5, d_smooth=5)
 
+        # Bollinger Bands (20, 2)
+        bb = ta.bbands(df['Close'], length=20, std=2)
+        if bb is not None:
+            # Handle pandas_ta column naming variations
+            cols = bb.columns
+            # Dynamically find columns ending with specific patterns if strict names fail
+            bbl = [c for c in cols if c.startswith('BBL')][0]
+            bbm = [c for c in cols if c.startswith('BBM')][0]
+            bbu = [c for c in cols if c.startswith('BBU')][0]
+
+            df['BB_Lower'] = bb[bbl]
+            df['BB_Mid'] = bb[bbm]
+            df['BB_Upper'] = bb[bbu]
+        else:
+            # Fallback if ta.bbands fails
+            df['BB_Mid'] = df['Close'].rolling(20).mean()
+            std = df['Close'].rolling(20).std()
+            df['BB_Upper'] = df['BB_Mid'] + 2 * std
+            df['BB_Lower'] = df['BB_Mid'] - 2 * std
+
+        # RSI (14)
+        df['RSI'] = ta.rsi(df['Close'], length=14)
+
+        # BB + RSI + StochRSI Logic Signals
+        # Buy: Touched Lower BB + StochRSI Cross Up + RSI < 45
+        # Sell: Touched Upper BB + StochRSI Cross Down + RSI > 55
+
+        # Helper for StochRSI Cross
+        k = df['Fast_K']
+        d = df['Slow_D']
+        cross_up = (k.shift(1) <= d.shift(1)) & (k > d)
+        cross_down = (k.shift(1) >= d.shift(1)) & (k < d)
+
+        # Helper for Price vs BB (Relaxed: Price <= Lower BB * 1.01 to catch touches)
+        touched_lower = df['Low'] <= df['BB_Lower'] * 1.01
+        touched_upper = df['High'] >= df['BB_Upper'] * 0.99
+
+        # Context
+        rsi_oversold = df['RSI'] < 50 # Relaxed from 45 to 50 for broader detection in this example
+        rsi_overbought = df['RSI'] > 50
+
+        # Signals
+        df['BB_RSI_Buy'] = touched_lower & cross_up & rsi_oversold
+        df['BB_RSI_Sell'] = touched_upper & cross_down & rsi_overbought
+
         # Phases
         bull_mask, bear_mask = detect_cycle_phases(df)
         df['Bullish_Phase'] = bull_mask
@@ -185,6 +230,11 @@ def get_market_analysis_data(ticker="SPY", period="6mo"):
                 "tsv": float(df['TSV'].iloc[i]) if not pd.isna(df['TSV'].iloc[i]) else None,
                 "fast_k": float(df['Fast_K'].iloc[i]) if not pd.isna(df['Fast_K'].iloc[i]) else None,
                 "slow_d": float(df['Slow_D'].iloc[i]) if not pd.isna(df['Slow_D'].iloc[i]) else None,
+                "rsi": float(df['RSI'].iloc[i]) if not pd.isna(df['RSI'].iloc[i]) else None,
+                "bb_upper": float(df['BB_Upper'].iloc[i]) if not pd.isna(df['BB_Upper'].iloc[i]) else None,
+                "bb_lower": float(df['BB_Lower'].iloc[i]) if not pd.isna(df['BB_Lower'].iloc[i]) else None,
+                "bb_rsi_buy": bool(df['BB_RSI_Buy'].iloc[i]),
+                "bb_rsi_sell": bool(df['BB_RSI_Sell'].iloc[i]),
                 "market_status": status_color, # Legacy field
                 "status_text": status_text
             })

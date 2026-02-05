@@ -26,6 +26,22 @@ def generate_market_chart(df, output_path):
     # Prepare AddPlots
     apds = []
 
+    # --- Panel 0: BB & Markers ---
+    if 'BB_Upper' in df.columns and 'BB_Lower' in df.columns:
+        apds.append(mpf.make_addplot(df['BB_Upper'], panel=0, color='gray', alpha=0.5, width=0.8))
+        apds.append(mpf.make_addplot(df['BB_Lower'], panel=0, color='gray', alpha=0.5, width=0.8))
+
+    if 'BB_RSI_Buy' in df.columns:
+        # Buy Markers (Low * 0.99 for spacing)
+        # Use np.where to filter NaN for non-signals
+        buy_signals = np.where(df['BB_RSI_Buy'], df['Low'] * 0.99, np.nan)
+        apds.append(mpf.make_addplot(buy_signals, panel=0, type='scatter', markersize=100, marker='^', color='lime'))
+
+    if 'BB_RSI_Sell' in df.columns:
+        # Sell Markers (High * 1.01)
+        sell_signals = np.where(df['BB_RSI_Sell'], df['High'] * 1.01, np.nan)
+        apds.append(mpf.make_addplot(sell_signals, panel=0, type='scatter', markersize=100, marker='v', color='magenta'))
+
     # --- Panel 1: TSV (Approx) ---
     if 'TSV' in df.columns:
         # TSV line color: Teal (similar to image)
@@ -50,6 +66,13 @@ def generate_market_chart(df, output_path):
     elif 'StochRSI_K' in df.columns and 'StochRSI_D' in df.columns:
         apds.append(mpf.make_addplot(df['StochRSI_K'], panel=2, color='cyan', width=1.2, ylabel='StochRSI'))
         apds.append(mpf.make_addplot(df['StochRSI_D'], panel=2, color='orange', width=1.2))
+
+    # --- Panel 3: RSI ---
+    if 'RSI' in df.columns:
+        # RSI 50 line
+        apds.append(mpf.make_addplot(np.full(len(df), 50), panel=3, color='white', linestyle='--', width=0.8, secondary_y=False))
+        # RSI line
+        apds.append(mpf.make_addplot(df['RSI'], panel=3, color='yellow', width=1.5, ylabel='RSI', ylim=(0, 100)))
 
     # --- Trend Background Logic ---
     if 'Trend_Signal' in df.columns:
@@ -88,10 +111,10 @@ def generate_market_chart(df, output_path):
             style=s,
             addplot=apds,
             volume=False, # Volume usually not on SPY analysis chart or simplified
-            panel_ratios=(6, 1, 1),
+            panel_ratios=(6, 1, 1, 1), # Added ratio for Panel 3
             title="",
             returnfig=True,
-            figsize=(10, 13),
+            figsize=(10, 15), # Increased height
             tight_layout=False,
         )
 
