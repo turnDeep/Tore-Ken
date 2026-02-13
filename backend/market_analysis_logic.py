@@ -84,14 +84,15 @@ def detect_cycle_phases(df):
 
     return bullish_phase, bearish_phase
 
-def get_market_analysis_data(ticker="SPY", period="6mo"):
+def get_market_analysis_data(ticker="GLD", period="6mo"):
     """
-    Fetches SPY data, calculates indicators, and returns a list of dictionaries.
-    Returns: (list_of_dicts, spy_dataframe)
+    Fetches Market Analysis data (default GLD), calculates indicators, and returns a list of dictionaries.
+    Returns: (list_of_dicts, market_dataframe)
     """
     try:
         # Use simple download.
-        df = yf.download(ticker, period=period, interval="1d", progress=False)
+        # Fetch 1h data to serve as base, allowing 4h overlay
+        df = yf.download(ticker, period=period, interval="1h", progress=False)
         if df.empty:
             logger.error("Market data download failed")
             return [], pd.DataFrame()
@@ -113,6 +114,28 @@ def get_market_analysis_data(ticker="SPY", period="6mo"):
         # Indicators
         df['TSV'] = calculate_tsv_approximation(df, length=12, ma_length=7, ma_type='EMA')
         df['Fast_K'], df['Slow_D'] = calculate_stochrsi_1op(df, rsi_length=14, stoch_length=14, k_smooth=5, d_smooth=5)
+
+        # Calculate 4-Hour StochRSI for Charting (Panel 1 Replacement)
+        # Resample to 4-Hour
+        # Note: resample('4h') might need specific offset handling if market hours don't align perfectly,
+        # but standard resample usually works well enough for approximation.
+        df_4h = df.resample('4h').agg({
+            'Open': 'first',
+            'High': 'max',
+            'Low': 'min',
+            'Close': 'last',
+            'Volume': 'sum'
+        }).dropna()
+
+        # Calculate StochRSI on 4-Hour Data
+        h4_k, h4_d = calculate_stochrsi_1op(df_4h, rsi_length=14, stoch_length=14, k_smooth=5, d_smooth=5)
+        df_4h['4h_Fast_K'] = h4_k
+        df_4h['4h_Slow_D'] = h4_d
+
+        # Merge 4-Hour StochRSI back to Hourly (Forward Fill)
+        # Use reindex with method='ffill' to align 4h values to hourly dates
+        df['4h_Fast_K'] = df_4h['4h_Fast_K'].reindex(df.index, method='ffill')
+        df['4h_Slow_D'] = df_4h['4h_Slow_D'].reindex(df.index, method='ffill')
 
         # Phases
         bull_mask, bear_mask = detect_cycle_phases(df)

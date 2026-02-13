@@ -1,5 +1,7 @@
 # Ignore the data directory, which contains the SQLite cache and generated JSON files.
-/data/
+/data/*
+!/data/market_chart_*.png
+!/data/market_chart.png
 
 # Ignore Python bytecode and cache
 __pycache__/

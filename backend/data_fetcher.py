@@ -118,27 +118,47 @@ def fetch_and_notify():
     logger.info("Executing fetch_and_notify (New MomentumX Logic)...")
 
     try:
-        # 1. Market Analysis (SPY)
-        logger.info("Generating Market Analysis Data (6 months)...")
-        # get_market_analysis_data returns (market_data_list, spy_df)
-        market_data, spy_df = get_market_analysis_data(period="6mo")
+        # 1. Market Analysis (SPY, SLV, GLD)
+        # Iterate over tickers to generate individual charts
+        tickers = ["SPY", "SLV", "GLD"]
+        market_data_map = {} # Store data for "market_analysis.json" (last one wins or we pick one)
 
+        # We will use GLD as the primary one for market_analysis.json and market_chart.png default
+        primary_ticker = "GLD"
+
+        for ticker in tickers:
+            logger.info(f"Generating Market Analysis Data (6 months) for {ticker}...")
+            m_data, m_df = get_market_analysis_data(ticker=ticker, period="6mo")
+
+            if m_data:
+                # Store for later if it's primary
+                if ticker == primary_ticker:
+                    market_data_map[ticker] = m_data
+
+                # Generate Chart Image: market_chart_{ticker}.png
+                chart_path = os.path.join(DATA_DIR, f"market_chart_{ticker}.png")
+                logger.info(f"Generating chart image at {chart_path}...")
+                generate_market_chart(m_df, chart_path)
+
+                # If primary, also save as market_chart.png for frontend compatibility
+                if ticker == primary_ticker:
+                    default_chart_path = os.path.join(DATA_DIR, "market_chart.png")
+                    generate_market_chart(m_df, default_chart_path)
+            else:
+                logger.error(f"Failed to generate market data for {ticker}.")
+
+        # Save market analysis (History) using Primary Ticker
+        market_data = market_data_map.get(primary_ticker)
         if market_data:
-            # Generate Chart Image
-            chart_path = os.path.join(DATA_DIR, "market_chart.png")
-            logger.info(f"Generating chart image at {chart_path}...")
-            generate_market_chart(spy_df, chart_path)
-
-            # Save market analysis (History)
             analysis_file = os.path.join(DATA_DIR, "market_analysis.json")
             with open(analysis_file, "w") as f:
                 json.dump({
                     "history": market_data,
                     "last_updated": datetime.datetime.now().isoformat()
                 }, f)
-            logger.info(f"Saved {analysis_file}")
+            logger.info(f"Saved {analysis_file} using {primary_ticker} data")
         else:
-            logger.error("Failed to generate market data.")
+            logger.error(f"Primary ticker {primary_ticker} data missing for market_analysis.json")
 
         # 2. MomentumX Screener
         daily_data = run_screener_process()
