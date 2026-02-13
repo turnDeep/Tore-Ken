@@ -195,7 +195,7 @@ def get_unique_symbols(symbol_limit=None, override_start_date=None):
             start_date = START_DATE
             logging.info(f"Using config start date: {start_date}")
         else:
-            start_date = (datetime.now() - timedelta(days=365*2)).strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=365*10)).strftime('%Y-%m-%d')
             logging.info(f"Defaulting to start date: {start_date}")
 
     logging.info(f"Found {len(excel_files)} Excel files. Reading symbols...")
