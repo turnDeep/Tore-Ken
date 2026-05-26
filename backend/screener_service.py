@@ -10,7 +10,7 @@ from backend.get_tickers import update_stock_csv_from_fmp
 from backend.rdt_data_fetcher import get_unique_symbols, download_price_data, merge_price_data, save_price_data, load_existing_price_data
 from backend.chart_generator_mx import RDTChartGenerator
 from backend.fundamental_analysis import analyze_tickers_in_batch
-from backend.recognition_gap_ranking import build_recognition_gap_ranking, save_ranking
+from backend.recognition_gap_ranking import build_recognition_gap_ranking, parse_top_n, save_ranking
 from backend.x_ranking_publisher import publish as publish_x_ranking_assets
 from backend.opencode_consensus import write_consensus_prompt
 
@@ -443,9 +443,10 @@ def run_screener_process(force_weekend_mode=False):
     x_post_assets = {}
     try:
         logger.info("Building Recognition Gap EP 7-layer ranking...")
+        recognition_gap_top_n = parse_top_n(os.getenv("RECOGNITION_GAP_TOP_N", "0"))
         recognition_gap_result = build_recognition_gap_ranking(
             asof_date=data_date.strftime('%Y-%m-%d'),
-            top_n=int(os.getenv("RECOGNITION_GAP_TOP_N", "20")),
+            top_n=recognition_gap_top_n,
             price_data=final_data,
         )
         save_ranking(recognition_gap_result)
@@ -455,7 +456,7 @@ def run_screener_process(force_weekend_mode=False):
         if os.getenv("RECOGNITION_GAP_RENDER_X_IMAGES", "true").lower() == "true":
             x_post_assets = publish_x_ranking_assets(
                 asof_label=data_date.strftime('%Y-%m-%d'),
-                top_n=int(os.getenv("RECOGNITION_GAP_TOP_N", "20")),
+                top_n=recognition_gap_top_n,
                 post_x=os.getenv("X_POST_ENABLED", "false").lower() == "true",
                 include_title=os.getenv("X_INCLUDE_TITLE", "false").lower() == "true",
             )

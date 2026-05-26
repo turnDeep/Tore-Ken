@@ -37,8 +37,7 @@ Tore-Kenは、米国株約3000銘柄の日足データから「Recognition Gap E
     - `data/opencode_consensus_prompt.md`
 
 - `backend/x_ranking_publisher.py`
-  - ランキング上位20銘柄を、1-5位、6-10位、11-15位、16-20位の4枚の白黒PNGに分割します。
-  - 検証や内部確認では、20銘柄を超えるCSVも5銘柄ずつ全件画像化できます。
+  - 検出された全銘柄を5銘柄ずつ白黒PNGに分割します。
   - 画像には `順位 / 銘柄 / Entry / 含み益 / 要点` を表示します。
   - 本文は `$SIMO $BW ...` のように20銘柄分のティッカーだけを投稿できます。
   - 検証時は `--all-tickers-in-text` でCSV内の全ティッカーを本文に含められます。
@@ -118,6 +117,8 @@ X用画像だけ生成:
 python -m backend.x_ranking_publisher --ranking-csv data/recognition_gap_ranking.csv --asof-label 2026-05-22
 ```
 
+`--top-n` 未指定、`--top-n 0`、または `--top-n all` なら、CSVにある検出済み銘柄をすべて画像化します。X本文だけは通常20銘柄に制限し、検証時に全ティッカーを本文にも入れる場合は `--all-tickers-in-text` を使います。
+
 Xへ投稿:
 
 ```bash
@@ -139,7 +140,7 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 3. Recognition Gap EP候補を抽出
 4. 7層評価ラベルを付与
 5. opencode go合議用プロンプトを生成
-6. 上位20銘柄のX用画像4枚を生成
+6. 検出された全銘柄を5件ずつX用画像に分割して生成
 7. `X_POST_ENABLED=true` の場合だけXへ投稿
 
 ## 7層評価

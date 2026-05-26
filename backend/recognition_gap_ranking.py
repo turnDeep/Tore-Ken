@@ -31,7 +31,18 @@ PROFILE_CACHE_PATH = DATA_DIR / "recognition_gap_profiles.json"
 RANKING_JSON_PATH = DATA_DIR / "recognition_gap_ranking.json"
 RANKING_CSV_PATH = DATA_DIR / "recognition_gap_ranking.csv"
 
-DEFAULT_TOP_N = int(os.getenv("RECOGNITION_GAP_TOP_N", "20"))
+def parse_top_n(value: Any = None) -> int | None:
+    """Return None for all rows; positive int for an explicit cap."""
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in {"", "0", "all", "none", "unlimited"}:
+        return None
+    number = int(text)
+    return number if number > 0 else None
+
+
+DEFAULT_TOP_N = parse_top_n(os.getenv("RECOGNITION_GAP_TOP_N", "0"))
 MIN_CLOSE = float(os.getenv("RECOGNITION_GAP_MIN_CLOSE", "1.5"))
 MIN_DOLLAR_VOLUME20 = float(os.getenv("RECOGNITION_GAP_MIN_DOLLAR_VOLUME20", "1000000"))
 MAX_PROFILE_FETCH = int(os.getenv("RECOGNITION_GAP_PROFILE_FETCH_LIMIT", "350"))
@@ -496,7 +507,7 @@ def _summary(
 
 def build_recognition_gap_ranking(
     asof_date: str | None = None,
-    top_n: int = DEFAULT_TOP_N,
+    top_n: int | None = DEFAULT_TOP_N,
     price_data: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     data = price_data if price_data is not None else _load_price_data()
@@ -669,7 +680,9 @@ def build_recognition_gap_ranking(
             -r.avg_dollar_volume20,
         )
     )
-    rows = rows[:top_n]
+    row_limit = parse_top_n(top_n)
+    if row_limit is not None:
+        rows = rows[:row_limit]
     for idx, row in enumerate(rows, start=1):
         row.rank = idx
 
@@ -700,7 +713,7 @@ def save_ranking(result: dict[str, Any]) -> None:
     logger.info("Saved %s and %s", RANKING_JSON_PATH, RANKING_CSV_PATH)
 
 
-def run(asof_date: str | None = None, top_n: int = DEFAULT_TOP_N, save: bool = True) -> dict[str, Any]:
+def run(asof_date: str | None = None, top_n: int | None = DEFAULT_TOP_N, save: bool = True) -> dict[str, Any]:
     result = build_recognition_gap_ranking(asof_date=asof_date, top_n=top_n)
     if save:
         save_ranking(result)
@@ -710,12 +723,12 @@ def run(asof_date: str | None = None, top_n: int = DEFAULT_TOP_N, save: bool = T
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build Recognition Gap EP 7-layer ranking.")
     parser.add_argument("--asof-date", help="YYYY-MM-DD. Only data up to this date is used.")
-    parser.add_argument("--top-n", type=int, default=DEFAULT_TOP_N)
+    parser.add_argument("--top-n", default=os.getenv("RECOGNITION_GAP_TOP_N", "0"), help="Positive number caps rows; 0/all means all detected rows.")
     parser.add_argument("--no-save", action="store_true")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    result = run(asof_date=args.asof_date, top_n=args.top_n, save=not args.no_save)
+    result = run(asof_date=args.asof_date, top_n=parse_top_n(args.top_n), save=not args.no_save)
     for row in result["ranking"][:20]:
         print(
             f"{row['rank']:>2} {row['symbol']:<6} entry={row['entry_date']} "

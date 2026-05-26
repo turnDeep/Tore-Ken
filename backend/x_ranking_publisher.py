@@ -20,6 +20,17 @@ DEFAULT_CSV = DATA_DIR / "recognition_gap_ranking.csv"
 DEFAULT_OUT_ROOT = DATA_DIR / "x_ranking_posts"
 
 
+def parse_limit(value: Any = None) -> int | None:
+    """Return None for all rows; positive int for an explicit cap."""
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in {"", "0", "all", "none", "unlimited"}:
+        return None
+    number = int(text)
+    return number if number > 0 else None
+
+
 def clean(value: Any) -> str:
     if value is None:
         return ""
@@ -118,7 +129,7 @@ def trim_chars(text: str, max_chars: int) -> str:
     return text[: max_chars - 1].rstrip("、。,. ") + "…"
 
 
-def normalize_rows(csv_path: Path, top_n: int) -> list[dict[str, str]]:
+def normalize_rows(csv_path: Path, top_n: int | None = None) -> list[dict[str, str]]:
     if not csv_path.exists():
         raise FileNotFoundError(f"ranking CSV not found: {csv_path}")
     df = pd.read_csv(csv_path)
@@ -127,7 +138,9 @@ def normalize_rows(csv_path: Path, top_n: int) -> list[dict[str, str]]:
         df = df.sort_values("_rank_sort", na_position="last")
 
     rows: list[dict[str, str]] = []
-    for idx, (_, row) in enumerate(df.head(top_n).iterrows(), start=1):
+    limit = parse_limit(top_n)
+    source = df if limit is None else df.head(limit)
+    for idx, (_, row) in enumerate(source.iterrows(), start=1):
         symbol = get_first(row, ["symbol", "ticker", "銘柄"]).upper().lstrip("$")
         if not symbol:
             continue
@@ -287,7 +300,7 @@ def post_to_x(text: str, image_paths: list[Path]) -> dict[str, Any]:
 def publish(
     ranking_csv: Path = DEFAULT_CSV,
     asof_label: str | None = None,
-    top_n: int = 20,
+    top_n: int | None = None,
     post_x: bool = False,
     include_title: bool = False,
     post_text_limit: int | None = 20,
@@ -316,7 +329,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Render and optionally post Recognition Gap EP ranking images to X.")
     parser.add_argument("--ranking-csv", type=Path, default=DEFAULT_CSV)
     parser.add_argument("--asof-label", default=None)
-    parser.add_argument("--top-n", type=int, default=20)
+    parser.add_argument("--top-n", default="0", help="Positive number caps rows; 0/all means all rows in the CSV.")
     parser.add_argument("--post-x", action="store_true")
     parser.add_argument("--include-title", action="store_true")
     parser.add_argument("--post-text-limit", type=int, default=20)
@@ -327,7 +340,7 @@ def main() -> None:
     result = publish(
         ranking_csv=args.ranking_csv,
         asof_label=args.asof_label,
-        top_n=args.top_n,
+        top_n=parse_limit(args.top_n),
         post_x=args.post_x,
         include_title=args.include_title,
         post_text_limit=None if args.all_tickers_in_text else args.post_text_limit,
