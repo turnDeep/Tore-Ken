@@ -38,6 +38,7 @@ Tore-Kenは、米国株約3000銘柄の日足データから「Recognition Gap E
 
 - `backend/x_ranking_publisher.py`
   - 検出された全銘柄を5銘柄ずつ白黒PNGに分割します。
+  - 表示順はデフォルトで含み益順ではなく、7層の優先保有/監視順です。`--sort-by rank` でCSV順位をそのまま使えます。
   - 画像には `順位 / 銘柄 / Entry / 含み益 / 要点` を表示します。
   - 本文は `$SIMO $BW ...` のように20銘柄分のティッカーだけを投稿できます。
   - 検証時は `--all-tickers-in-text` でCSV内の全ティッカーを本文に含められます。

@@ -12,9 +12,11 @@ from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 
 try:
-    from backend.summary_style import compose_seven_layer_summary
+    from backend.summary_style import compose_seven_layer_summary, infer_supply_severity, safe_float
 except Exception:  # pragma: no cover - direct script fallback
     compose_seven_layer_summary = None
+    infer_supply_severity = None
+    safe_float = None
 
 
 load_dotenv()
@@ -91,6 +93,116 @@ def should_rewrite_summary(summary: str) -> bool:
     return any(marker in summary for marker in ("FMP profileで", "ニュース文脈:"))
 
 
+def nfloat(value: Any, default: float = float("nan")) -> float:
+    if safe_float is not None:
+        return safe_float(value, default)
+    return fnum(value, default)
+
+
+def priority_value(row: pd.Series) -> float:
+    explicit = nfloat(row.get("recommendation_priority"))
+    if explicit == explicit:
+        return explicit
+
+    thesis = get_first(row, ["thesis_state", "stable_thesis_state"])
+    substate = get_first(row, ["thesis_substate"])
+    price = get_first(row, ["price_trend"])
+    volume = get_first(row, ["volume_demand_durability", "volume_state"])
+    industry = get_first(row, ["industry", "Industry"]).lower()
+    sector = get_first(row, ["sector", "Sector"]).lower()
+    news = get_first(row, ["news_titles", "recent_news", "news"])
+    supply = get_first(row, ["supply_risk_severity"])
+    if infer_supply_severity is not None:
+        supply = infer_supply_severity(
+            supply,
+            market_cap=get_first(row, ["market_cap", "mktCap", "MarketCap"]),
+            avg_dollar_volume20=get_first(row, ["avg_dollar_volume20"]),
+            news_text=news,
+        )
+
+    value = 0.0
+    value += {
+        "thesis_intact": 8,
+        "thesis_mixed": 3,
+        "thesis_damaged": -8,
+    }.get(thesis, 0)
+    if substate == "intact_volume_leader":
+        value += 3
+    elif substate == "mixed_strong":
+        value += 2
+    elif substate in {"risk_dominant", "entity_or_data_check"}:
+        value -= 3
+
+    value += {
+        "extended_but_intact": 5,
+        "strong": 5,
+        "constructive": 3,
+        "mixed": 1,
+        "weakening": -5,
+        "early_trend_unconfirmed": 0,
+    }.get(price, 0)
+    value += {
+        "durable_accumulation": 6,
+        "supportive": 4,
+        "neutral": 1,
+        "fading": -6,
+    }.get(volume, 0)
+    value += {"low": 4, "medium": 0, "high": -8}.get(supply, 0)
+
+    text = f"{industry} {sector}"
+    if any(term in text for term in ("semiconductor", "communication", "electronic", "hardware", "satellite", "aerospace", "defense")):
+        value += 4
+    elif any(term in text for term in ("energy", "oil", "gas", "industrial", "machinery", "electrical")):
+        value += 2
+
+    rev_yoy = nfloat(get_first(row, ["rev_yoy_fmp", "rev_yoy", "revenue_yoy"]))
+    if rev_yoy == rev_yoy:
+        if rev_yoy >= 0.75:
+            value += 7
+        elif rev_yoy >= 0.45:
+            value += 5
+        elif rev_yoy >= 0.25:
+            value += 4
+        elif rev_yoy >= 0.10:
+            value += 2
+        elif rev_yoy < 0:
+            value -= 3
+
+    eps = nfloat(get_first(row, ["latest_eps_fmp", "eps"]))
+    if eps == eps:
+        value += 1 if eps > 0 else -1
+
+    ret60_resid_spy = nfloat(get_first(row, ["ret60_resid_spy"]))
+    if ret60_resid_spy == ret60_resid_spy:
+        value += 4 if ret60_resid_spy >= 0.25 else 2 if ret60_resid_spy > 0 else -2
+
+    lower_news = news.lower()
+    if any(term in lower_news for term in ("class action", "lawsuit", "investor harm", "sec investigation")):
+        value -= 5
+    if "offering" in lower_news or "common stock" in lower_news:
+        value -= 2
+    return value
+
+
+def sort_dataframe(df: pd.DataFrame, sort_by: str) -> pd.DataFrame:
+    sort_by = (sort_by or "priority").lower()
+    if sort_by == "input":
+        return df
+    if sort_by == "rank":
+        if "rank" in df.columns:
+            df = df.copy()
+            df["_rank_sort"] = pd.to_numeric(df["rank"], errors="coerce")
+            return df.sort_values("_rank_sort", na_position="last")
+        return df
+    df = df.copy()
+    df["_priority_sort"] = df.apply(priority_value, axis=1)
+    if "rank" in df.columns:
+        df["_rank_tie"] = pd.to_numeric(df["rank"], errors="coerce")
+    else:
+        df["_rank_tie"] = range(1, len(df) + 1)
+    return df.sort_values(["_priority_sort", "_rank_tie"], ascending=[False, True], na_position="last")
+
+
 def load_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
     candidates = [
         r"C:\Windows\Fonts\meiryob.ttc" if bold else r"C:\Windows\Fonts\meiryo.ttc",
@@ -141,13 +253,16 @@ def trim_chars(text: str, max_chars: int) -> str:
     return text[: max_chars - 1].rstrip("、。,. ") + "…"
 
 
-def normalize_rows(csv_path: Path, top_n: int | None = None, rewrite_summary: bool = False) -> list[dict[str, str]]:
+def normalize_rows(
+    csv_path: Path,
+    top_n: int | None = None,
+    rewrite_summary: bool = False,
+    sort_by: str = "priority",
+) -> list[dict[str, str]]:
     if not csv_path.exists():
         raise FileNotFoundError(f"ranking CSV not found: {csv_path}")
     df = pd.read_csv(csv_path)
-    if "rank" in df.columns:
-        df["_rank_sort"] = pd.to_numeric(df["rank"], errors="coerce")
-        df = df.sort_values("_rank_sort", na_position="last")
+    df = sort_dataframe(df, sort_by)
 
     rows: list[dict[str, str]] = []
     limit = parse_limit(top_n)
@@ -197,7 +312,7 @@ def normalize_rows(csv_path: Path, top_n: int | None = None, rewrite_summary: bo
 
         rows.append(
             {
-                "rank": clean(row.get("rank")) or str(idx),
+                "rank": str(idx) if (sort_by or "priority").lower() == "priority" else clean(row.get("rank")) or str(idx),
                 "symbol": symbol,
                 "entry": get_first(row, ["entry_date", "Entry", "entry"]),
                 "return": pct_text(get_first(row, ["return_since_entry", "含み益", "return", "gain"])),
@@ -343,9 +458,10 @@ def publish(
     include_title: bool = False,
     post_text_limit: int | None = 20,
     rewrite_summary: bool = False,
+    sort_by: str = "priority",
     out_dir: Path | None = None,
 ) -> dict[str, Any]:
-    rows = normalize_rows(ranking_csv, top_n=top_n, rewrite_summary=rewrite_summary)
+    rows = normalize_rows(ranking_csv, top_n=top_n, rewrite_summary=rewrite_summary, sort_by=sort_by)
     if asof_label is None:
         asof_label = datetime.now().strftime("%Y-%m-%d")
     out_dir = out_dir or DEFAULT_OUT_ROOT / asof_label.replace("-", "")
@@ -374,6 +490,7 @@ def main() -> None:
     parser.add_argument("--post-text-limit", type=int, default=20)
     parser.add_argument("--all-tickers-in-text", action="store_true")
     parser.add_argument("--rewrite-summary", action="store_true", help="Regenerate image summaries from structured 7-layer fields.")
+    parser.add_argument("--sort-by", default="priority", choices=["priority", "rank", "input"], help="priority uses 7-layer hold priority; rank preserves CSV rank.")
     parser.add_argument("--out-dir", type=Path, default=None)
     args = parser.parse_args()
 
@@ -385,6 +502,7 @@ def main() -> None:
         include_title=args.include_title,
         post_text_limit=None if args.all_tickers_in_text else args.post_text_limit,
         rewrite_summary=args.rewrite_summary,
+        sort_by=args.sort_by,
         out_dir=args.out_dir,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
