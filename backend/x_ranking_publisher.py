@@ -178,6 +178,9 @@ def normalize_rows(csv_path: Path, top_n: int | None = None, rewrite_summary: bo
                 ret252=get_first(row, ["ret252"]),
                 revenue_yoy=get_first(row, ["rev_yoy_fmp", "rev_yoy", "revenue_yoy"]),
                 eps=get_first(row, ["latest_eps_fmp", "eps"]),
+                market_cap=get_first(row, ["market_cap", "mktCap", "MarketCap"]),
+                avg_dollar_volume20=get_first(row, ["avg_dollar_volume20"]),
+                news_text=get_first(row, ["news_titles", "recent_news", "news"]),
                 adr_or_non_us=str(get_first(row, ["adr_or_non_us"])).lower() in {"true", "1", "yes"},
             )
         elif not summary:

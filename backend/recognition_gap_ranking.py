@@ -502,6 +502,11 @@ def _summary(
     ret_since_entry: float,
     ret126: float,
     ret252: float,
+    revenue_yoy: float | None,
+    eps: float | None,
+    market_cap: float | None,
+    avg_dollar_volume20: float,
+    news_text: str,
     adr_or_non_us: bool,
 ) -> str:
     return compose_seven_layer_summary(
@@ -522,6 +527,11 @@ def _summary(
         ret_since_entry=ret_since_entry,
         ret126=ret126,
         ret252=ret252,
+        revenue_yoy=revenue_yoy,
+        eps=eps,
+        market_cap=market_cap,
+        avg_dollar_volume20=avg_dollar_volume20,
+        news_text=news_text,
         adr_or_non_us=adr_or_non_us,
     )
 
@@ -684,6 +694,11 @@ def build_recognition_gap_ranking(
                     ret_since_entry,
                     ret126,
                     ret252,
+                    None,
+                    None,
+                    market_cap_value,
+                    avg_dv20,
+                    "",
                     adr_or_non_us,
                 ),
                 recommendation_priority=priority,

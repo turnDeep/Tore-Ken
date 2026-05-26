@@ -74,6 +74,7 @@ exit_rule: stage2_or_atr8
 - 列: `順位 / 銘柄 / Entry / 含み益 / 要点`
 - 本文は原則 `$TICKER` を20銘柄分だけ並べる。内部検証では全ティッカー出力も許可する
 - 要点はニュース見出しの貼り付けではなく、価格、出来高、業種文脈、ファンダ、供給リスク、thesis状態を統合した300字以内の日本語にする
+- `supply_risk_severity` は全銘柄で `low / medium / high` のいずれかを原則付与する。欠損時は時価総額、ドル出来高、offering/ATM/warrant/shelf/secondary系ニュースから推定する
 
 ## 禁止
 

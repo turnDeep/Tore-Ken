@@ -47,6 +47,7 @@ Tore-Kenは、米国株約3000銘柄の日足データから「Recognition Gap E
 - `backend/summary_style.py`
   - 画像やランキングCSVに載せる要点の共通スタイルを定義します。
   - Codexがこれまで書いていたような、売買命令ではなく「thesisの質」を説明する300字要点を作ります。
+  - `supply_risk_severity` が無いCSVでも、時価総額、ドル出来高、offering/ATM/warrant/shelf系ニュースから `low / medium / high` を推定します。
 
 - FastAPI
   - `/api/recognition-gap-ranking`

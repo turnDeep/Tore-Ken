@@ -40,6 +40,60 @@ def ratio_text(value: Any) -> str:
     return f"{number:.2f}倍"
 
 
+SUPPLY_RISK_TERMS = (
+    "offering",
+    "public offering",
+    "registered direct",
+    "at-the-market",
+    "atm",
+    "shelf",
+    "s-3",
+    "s-1",
+    "warrant",
+    "convertible",
+    "resale",
+    "dilution",
+    "secondary",
+    "common stock",
+    "insider sale",
+    "form 144",
+)
+
+
+def infer_supply_severity(
+    explicit: str = "",
+    *,
+    market_cap: Any = None,
+    avg_dollar_volume20: Any = None,
+    news_text: str = "",
+) -> str:
+    explicit = clean_text(explicit).lower()
+    if explicit in {"low", "medium", "high"}:
+        return explicit
+
+    cap = safe_float(market_cap)
+    adv = safe_float(avg_dollar_volume20)
+    text = clean_text(news_text).lower()
+    has_supply_news = any(term in text for term in SUPPLY_RISK_TERMS)
+
+    if math.isfinite(cap):
+        if cap < 250_000_000:
+            return "high"
+        if has_supply_news and cap < 1_500_000_000:
+            return "high"
+        if cap < 1_000_000_000:
+            return "medium"
+        if has_supply_news:
+            return "medium"
+        if math.isfinite(adv) and adv < 1_000_000:
+            return "medium"
+        return "low"
+
+    if has_supply_news:
+        return "medium"
+    return ""
+
+
 def trim_summary(text: str, max_chars: int = 300) -> str:
     text = clean_text(text)
     if len(text) <= max_chars:
@@ -112,12 +166,25 @@ def volume_phrase(volume_state: str, dv_persistence: Any = None, up_down_ratio: 
     }.get(state, f"出来高は日足側のEP後維持率で確認し、資金流入が残るかが焦点{suffix}")
 
 
-def supply_phrase(supply_severity: str, adr_or_non_us: bool = False) -> str:
+def supply_phrase(
+    supply_severity: str,
+    adr_or_non_us: bool = False,
+    *,
+    market_cap: Any = None,
+    avg_dollar_volume20: Any = None,
+    news_text: str = "",
+) -> str:
+    severity = infer_supply_severity(
+        supply_severity,
+        market_cap=market_cap,
+        avg_dollar_volume20=avg_dollar_volume20,
+        news_text=news_text,
+    )
     base = {
         "low": "供給リスクはlowで、希薄化よりトレンド継続を優先して見やすい",
         "medium": "供給リスクはmedium。offeringや大株主売りのニュース監視は必要",
         "high": "供給リスクはhighで、テクニカルが強くても監視優先度は下げる",
-    }.get(clean_text(supply_severity), "供給リスクは未判定で、offeringや大株主売りは別途監視")
+    }.get(severity, "供給リスクはデータ不足で未確定。offeringや大株主売りは別途監視")
     if adr_or_non_us:
         base += "。ADR/非米国要因も確認"
     return base
@@ -182,6 +249,9 @@ def compose_seven_layer_summary(
     ret252: Any = None,
     revenue_yoy: Any = None,
     eps: Any = None,
+    market_cap: Any = None,
+    avg_dollar_volume20: Any = None,
+    news_text: str = "",
     adr_or_non_us: bool = False,
     max_chars: int = 300,
 ) -> str:
@@ -194,7 +264,13 @@ def compose_seven_layer_summary(
         volume_phrase(volume_state, dv_persistence, up_down_ratio),
         market_part,
         fundamental_phrase(fundamental, ret126, ret252, revenue_yoy, eps),
-        supply_phrase(supply_severity, adr_or_non_us),
+        supply_phrase(
+            supply_severity,
+            adr_or_non_us,
+            market_cap=market_cap,
+            avg_dollar_volume20=avg_dollar_volume20,
+            news_text=news_text,
+        ),
         thesis_phrase(thesis_state, thesis_substate),
         f"Entry後{pct_text(ret_since_entry)}だが、売買判断ではなくstage2_or_atr8の機械exitを優先",
     ]
