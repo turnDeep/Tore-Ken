@@ -142,8 +142,10 @@ def update_stock_csv_from_fmp(filepath: str = 'stock.csv') -> bool:
 
         logger.info(f"Total stocks retrieved: {len(df)}")
 
-        # Save to CSV (Ticker and Exchange only)
-        output_df = df[['Ticker', 'Exchange']].copy()
+        # Save attributes needed by the Recognition Gap 7-layer ranking.
+        output_df = df[['Ticker', 'Exchange', 'CompanyName', 'MarketCap', 'Sector', 'Industry', 'Country']].copy()
+        output_df['Symbol'] = output_df['Ticker']
+        output_df = output_df[['Ticker', 'Symbol', 'Exchange', 'CompanyName', 'MarketCap', 'Sector', 'Industry', 'Country']]
         output_df.to_csv(filepath, index=False)
         logger.info(f"Successfully updated {filepath}")
         return True

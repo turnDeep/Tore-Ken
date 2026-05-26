@@ -10,6 +10,9 @@ from backend.get_tickers import update_stock_csv_from_fmp
 from backend.rdt_data_fetcher import get_unique_symbols, download_price_data, merge_price_data, save_price_data, load_existing_price_data
 from backend.chart_generator_mx import RDTChartGenerator
 from backend.fundamental_analysis import analyze_tickers_in_batch
+from backend.recognition_gap_ranking import build_recognition_gap_ranking, save_ranking
+from backend.x_ranking_publisher import publish as publish_x_ranking_assets
+from backend.opencode_consensus import write_consensus_prompt
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -435,17 +438,56 @@ def run_screener_process(force_weekend_mode=False):
     # 6. Charts
     generate_charts(strong_stocks, data_date=data_date)
 
-    # 7. Notification Logic (Count stocks with ADR% >= 4.0)
+    # 7. Recognition Gap EP 7-layer ranking
+    recognition_gap_result = {}
+    x_post_assets = {}
+    try:
+        logger.info("Building Recognition Gap EP 7-layer ranking...")
+        recognition_gap_result = build_recognition_gap_ranking(
+            asof_date=data_date.strftime('%Y-%m-%d'),
+            top_n=int(os.getenv("RECOGNITION_GAP_TOP_N", "20")),
+            price_data=final_data,
+        )
+        save_ranking(recognition_gap_result)
+        prompt_path = write_consensus_prompt(recognition_gap_result)
+        logger.info(f"Wrote opencode go consensus prompt: {prompt_path}")
+
+        if os.getenv("RECOGNITION_GAP_RENDER_X_IMAGES", "true").lower() == "true":
+            x_post_assets = publish_x_ranking_assets(
+                asof_label=data_date.strftime('%Y-%m-%d'),
+                top_n=int(os.getenv("RECOGNITION_GAP_TOP_N", "20")),
+                post_x=os.getenv("X_POST_ENABLED", "false").lower() == "true",
+                include_title=os.getenv("X_INCLUDE_TITLE", "false").lower() == "true",
+            )
+    except Exception as e:
+        logger.error(f"Recognition Gap ranking failed: {e}", exc_info=True)
+        recognition_gap_result = {
+            "date": data_date.strftime('%Y-%m-%d'),
+            "ranking": [],
+            "error": str(e),
+        }
+
+    # 8. Notification Logic (Count stocks with ADR% >= 4.0)
     filtered_count = sum(1 for s in strong_stocks if s.get('adr_pct', 0) >= 4.0)
 
-    # 8. Save JSON
+    # 9. Save JSON
     # Use data_date for filenames and content to ensure alignment with Market Analysis
     today_str = data_date.strftime('%Y%m%d')
     output_data = {
         "date": data_date.strftime('%Y-%m-%d'),
         "market_status": "Neutral",
-        "status_text": f"Strong Stocks: {filtered_count}", # Updated text for notification
+        "status_text": f"Recognition Gap EP: {len(recognition_gap_result.get('ranking', []))}",
+        "legacy_status_text": f"Strong Stocks: {filtered_count}",
         "strong_stocks": strong_stocks,
+        "recognition_gap_ranking": recognition_gap_result.get("ranking", []),
+        "recognition_gap_meta": {
+            "system": recognition_gap_result.get("system", "Recognition Gap EP 7-layer ranking"),
+            "entry_rule": recognition_gap_result.get("entry_rule", "industry_theme_ep_ex_biotech"),
+            "entry_timing": recognition_gap_result.get("entry_timing", "pullback10"),
+            "exit_rule": recognition_gap_result.get("exit_rule", "stage2_or_atr8"),
+            "x_post_assets": x_post_assets,
+            "error": recognition_gap_result.get("error"),
+        },
         "last_updated": datetime.datetime.now().isoformat()
     }
 

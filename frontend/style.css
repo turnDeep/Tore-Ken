@@ -53,6 +53,40 @@ body {
     box-shadow: 0 4px 12px var(--shadow-color);
 }
 
+.recognition-gap-table {
+    table-layout: fixed;
+}
+
+.recognition-gap-table th:nth-child(1),
+.recognition-gap-table td:nth-child(1) {
+    width: 52px;
+}
+
+.recognition-gap-table th:nth-child(2),
+.recognition-gap-table td:nth-child(2) {
+    width: 88px;
+}
+
+.recognition-gap-table th:nth-child(3),
+.recognition-gap-table td:nth-child(3) {
+    width: 112px;
+}
+
+.recognition-gap-table th:nth-child(4),
+.recognition-gap-table td:nth-child(4) {
+    width: 88px;
+}
+
+.recognition-gap-table th:nth-child(5),
+.recognition-gap-table td:nth-child(5) {
+    width: 190px;
+}
+
+.recognition-gap-table td {
+    vertical-align: top;
+    word-break: break-word;
+}
+
 /* --- Loading Spinner --- */
 .loading-container {
     text-align: center;

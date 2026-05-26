@@ -115,7 +115,7 @@ def fetch_and_notify():
     Orchestrates the new screening process and sends notifications.
     This replaces the old logic.
     """
-    logger.info("Executing fetch_and_notify (New MomentumX Logic)...")
+    logger.info("Executing fetch_and_notify (Recognition Gap EP 7-layer logic)...")
 
     try:
         # 1. Market Analysis (SPY)
@@ -140,7 +140,7 @@ def fetch_and_notify():
         else:
             logger.error("Failed to generate market data.")
 
-        # 2. MomentumX Screener
+        # 2. Legacy MomentumX data plus Recognition Gap EP ranking
         daily_data = run_screener_process()
 
         # Merge Market Status into daily_data if available

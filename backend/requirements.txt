@@ -12,6 +12,7 @@ curl-cffi
 beautifulsoup4>=4.12.0
 lxml>=5.1.0
 httpx>=0.27.0
+requests>=2.32.0
 
 # Financial Analysis
 scipy>=1.13.0
@@ -35,3 +36,4 @@ protobuf>=4.25.0
 websockets>=12.0
 pandas_ta
 numba
+tweepy>=4.14.0

@@ -1,116 +1,158 @@
-# Tore-ken (トレけん) Market Dashboard - MomentumX Edition
+# Tore-Ken - Recognition Gap EP 7層ランキング
 
-## 1. 概要 (Overview)
+Tore-Kenは、米国株約3000銘柄の日足データから「Recognition Gap EP」を抽出し、7層評価で監視優先順位を作るダッシュボードです。旧MomentumXのStrong Stocks機能は互換用に残しつつ、主出力はRecognition Gap EPランキングへ変更しています。
 
-**Tore-ken (トレけん)** は、市場トレンドを把握し、MomentumXロジックに基づいて有望な銘柄を発掘するためのダッシュボードです。
+## 目的
 
-従来のRDTシステムから刷新され、**MomentumX** のスクリーニングロジックを完全移植しました。ATRトレーリングストップ、RSパーセンタイル、ボラティリティ調整済みRS、Zone RSといった高度な指標を組み合わせ、強力なトレンド銘柄（Strong Stocks）を抽出します。
+大化け候補は、単に株価が上がった銘柄ではなく、次の条件が重なった銘柄として扱います。
 
-## 2. 主要機能
+- EPまたは強いdisplacementを起点に、価格構造が崩れていない
+- EP後も出来高とドル出来高が維持されている
+- 10MA押し目型のentry条件を満たしている
+- バイオなどイベント一点賭け銘柄を原則除外する
+- 業種、決算、受注、バックログ、供給リスク、銘柄エンティティを7層で監査する
+- exitはLLMではなく `stage2_or_atr8` の機械ルールを優先する
 
-### 2.1 Strong Stocks (有望銘柄リスト)
-市場全体の銘柄から、以下の厳格な基準を満たす銘柄を「Strong Stocks」として抽出します。ダッシュボードには、その中からさらに **ADR% (20日平均変動率) が 4.0% 以上** の「動きのある銘柄」のみが表示されます。
+このランキングは自動売買ではありません。保有監査、乗り換え候補比較、X投稿用の研究リストです。
 
-*   **スクリーニング基準 (Entry Criteria)**:
-    1.  **ATR Trailing Stop**: Buy状態（強気トレンド）。
-    2.  **RS Percentile (1M)**: 80以上（市場の上位20%の強さ）。
-    3.  **RS Volatility Adjusted**: HMAの傾きが正（上昇モメンタム）。
-    4.  **Zone RS**: Power Zone（Zone 3: RS比率 > 1 かつ モメンタム > 0）。
+## 実装済みの主要機能
 
-*   **リスト維持・除外基準 (Persistence/Exit Criteria)**:
-    一度リスト入りした銘柄は、以下に該当するまで追跡され続けます。
-    1.  **ATR Trailing Stop**: Sell状態（弱気トレンド）に転換。
-    2.  **Zone RS**: Power Zone から脱落（Dead, Drift, Liftへ移動）。
+- `backend/recognition_gap_ranking.py`
+  - `price_data_ohlcv.pkl` を読み、Recognition Gap EP候補を抽出します。
+  - `industry_theme_ep_ex_biotech / pullback10 / stage2_or_atr8` 系の運用仕様に合わせた日足ランキングを作ります。
+  - numbaが利用可能な場合、True Range計算をJIT化します。
+  - 出力:
+    - `data/recognition_gap_ranking.json`
+    - `data/recognition_gap_ranking.csv`
 
-*   **運用スケジュール (Weekend Screening)**:
-    *   **週末 (金曜データ更新時)**: 新規採用・除外の判定を行います。週足確定ベースでリストを更新します。
-    *   **平日 (月〜木)**: リストの銘柄は固定したまま、株価やADR%などの指標のみを毎日更新します。
+- `backend/opencode_consensus.py`
+  - opencode goの4モデル合議用プロンプトを生成します。
+  - 対象モデル:
+    - `opencode-go/kimi-k2.6`
+    - `opencode-go-minimax/minimax-m2.7`
+    - `opencode-go/glm-5.1`
+    - `opencode-go/deepseek-v4-pro`
+  - まとめ役は現状 `opencode-go/deepseek-v4-pro` を推奨します。
+  - 出力:
+    - `data/opencode_consensus_prompt.md`
 
-*   **表示順序**:
-    *   エントリー日（リスト入りした日）が新しい順に表示されます。
+- `backend/x_ranking_publisher.py`
+  - ランキング上位20銘柄を、1-5位、6-10位、11-15位、16-20位の4枚の白黒PNGに分割します。
+  - 画像には `順位 / 銘柄 / Entry / 含み益 / 要点` を表示します。
+  - 本文は `$SIMO $BW ...` のように20銘柄分のティッカーだけを投稿できます。
+  - `X_POST_ENABLED=false` の場合は投稿せず画像だけ作成します。
 
-### 2.2 Market Analysis (市場分析)
-S&P 500 (SPY) の日足チャートと独自のトレンド判定を表示します。
-*   **Green Zone**: 上昇トレンド（積極投資推奨）。
-*   **Red Zone**: 下落トレンド（守備的）。
-*   **Neutral**: 中立。
+- FastAPI
+  - `/api/recognition-gap-ranking`
+  - `/api/x-ranking-image/{yyyymmdd}/{filename}`
+  - 既存の `/api/data` と `/api/daily/{date_key}` にも `recognition_gap_ranking` を含めます。
 
-### 2.3 詳細チャート分析
-リスト内の銘柄を選択すると、詳細なテクニカルチャートが表示されます。
-*   **メインチャート**: ローソク足 + ATR Trailing Stop (緑=Buy, 赤=Sell)。
-*   **サブ指標**: Zone RS, RS Percentile, Volatility Adjusted RS, RTI (Range Tightening Indicator)。
+- Frontend
+  - 画面の主セクションを「7層ランキング」に変更しました。
+  - `順位 / 銘柄 / Entry / 含み益 / State / 要点` を表示します。
 
-### 2.4 リアルタイム監視
-*   **Realtime RVol**: 市場開場中、WebSocketを通じてリアルタイムの相対出来高（RVol）を表示します。
-    *   **最適化**: APIリソース節約のため、**RTIシグナル（オレンジドット: 嵐の前の静けさ）** が点灯している「ブレイクアウト直前の銘柄」のみをリアルタイム更新します。それ以外の銘柄は `--` と表示されます。
+## 必要API
 
-## 3. 技術スタック
+`.env.example` を `.env` にコピーして値を入れてください。実キーをGitHubへコミットしないでください。
 
-- **Backend**: Python 3.12, FastAPI
-- **Frontend**: HTML5, CSS3, Vanilla JavaScript (PWA対応)
-- **Data Processing**: pandas, numpy, yfinance, mplfinance, numba
-- **Database**: JSON storage (日次データ保存)
+必須:
 
-## 4. ディレクトリ構造
-
-```
-.
-├── backend/
-│   ├── main.py                     # FastAPIアプリケーションサーバー
-│   ├── data_fetcher.py             # 全体オーケストレーション
-│   ├── screener_service.py         # 新スクリーニング実行サービス (MomentumX)
-│   ├── rdt_data_fetcher.py         # データ取得・増分更新ロジック
-│   ├── chart_generator_mx.py       # MomentumX仕様のチャート生成
-│   ├── market_analysis_logic.py    # 市場分析ロジック (SPY)
-│   ├── market_chart_generator.py   # 市場分析チャート生成
-│   ├── calculate_atr_trailing_stop.py      # ATR計算モジュール
-│   ├── calculate_rs_percentile_histogram.py # RS Percentile計算モジュール
-│   ├── calculate_rs_volatility_adjusted.py # Volatility Adj RS計算モジュール
-│   ├── calculate_rti.py            # RTI計算モジュール
-│   ├── calculate_zone_rs.py        # Zone RS計算モジュール
-│   └── stock.csv                   # 監視対象銘柄リスト
-├── frontend/
-│   ├── index.html                  # ダッシュボードUI
-│   ├── app.js                      # フロントエンドロジック
-│   └── style.css                   # スタイルシート
-├── data/                           # 生成されたデータ・チャート (Git対象外)
-└── README.md
+```text
+FMP_API_KEY=
+OPENCODE_GO_API_KEY=
 ```
 
-## 5. セットアップ手順
+X投稿を使う場合:
 
-### 5.1 前提条件
-- Python 3.12+
-- `pip`
+```text
+X_API_KEY=
+X_API_SECRET=
+X_ACCESS_TOKEN=
+X_ACCESS_TOKEN_SECRET=
+X_POST_ENABLED=false
+X_INCLUDE_TITLE=false
+```
 
-### 5.2 インストール
+任意:
+
+```text
+DISCORD_BOT_TOKEN=
+DISCORD_CHANNEL_ID=
+OPENAI_API_KEY=
+FRED_API_KEY=
+```
+
+Webullの売買機能と売買ボタンは実装していません。将来、読み取り専用レポートを復活させる場合だけ `.env.example` のWebull項目を使います。
+
+## 実行方法
+
+依存関係:
 
 ```bash
-# 1. リポジトリをクローン
-git clone <repository_url>
-cd tore-ken
-
-# 2. 依存関係のインストール
 pip install -r backend/requirements.txt
 ```
 
-### 5.3 データの初期化と実行
+データ更新からランキング生成まで:
 
 ```bash
-# 1. データの取得とスクリーニングの実行
-# 初回は過去5年分のデータを取得するため時間がかかります
-python -m backend.data_fetcher fetch
+python -m backend.data_fetcher
+```
 
-# 2. サーバーの起動
+ランキングだけ再生成:
+
+```bash
+python -m backend.recognition_gap_ranking --top-n 20
+```
+
+特定日までのデータでランキング:
+
+```bash
+python -m backend.recognition_gap_ranking --asof-date 2026-05-22 --top-n 20
+```
+
+X用画像だけ生成:
+
+```bash
+python -m backend.x_ranking_publisher --ranking-csv data/recognition_gap_ranking.csv --asof-label 2026-05-22
+```
+
+Xへ投稿:
+
+```bash
+python -m backend.x_ranking_publisher --ranking-csv data/recognition_gap_ranking.csv --asof-label 2026-05-22 --post-x
+```
+
+サーバー起動:
+
+```bash
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-ブラウザで `http://localhost:8000` にアクセスしてください。
+## 毎日運用
 
-## 6. 運用
+市場クローズ後に以下を実行します。
 
-データは日次で更新することを推奨します。`backend/data_fetcher.py` をcronなどで定期実行することで、最新の市場データに基づいたスクリーニングが行われ、通知が送信されます。
+1. FMPでユニバースと企業属性を更新
+2. yfinance/FMP由来の日足OHLCVを更新
+3. Recognition Gap EP候補を抽出
+4. 7層評価ラベルを付与
+5. opencode go合議用プロンプトを生成
+6. 上位20銘柄のX用画像4枚を生成
+7. `X_POST_ENABLED=true` の場合だけXへ投稿
 
-## 7. ライセンス
+## 7層評価
 
-本ソフトウェアは個人利用を目的としています。
+1. Data Integrity: 銘柄エンティティ、会社名、業種、ADR/非米国混入を確認
+2. Price Trend: 10/20/50/150/200MA、Stage 2、伸び切りだが崩れていないか
+3. Volume Demand Durability: EP後の出来高維持、ドル出来高、up/down volume
+4. Institutional and Supply: 流動性、時価総額、希薄化・供給リスク
+5. Catalyst Quality: 業種再評価、決算/受注/バックログ/ニュース文脈
+6. Fundamental Confirmation: 売上/EPS加速、構造変化、未確認なら保守的に扱う
+7. Thesis State: `thesis_intact / thesis_mixed / thesis_damaged` とサブ分類
+
+## 注意
+
+- ランキングは「大化け予想ランキング」ですが、売買命令ではありません。
+- 先見バイアス防止のため、`--asof-date` 実行時はその日以前の価格データだけを使います。
+- LLMの役割は説明と監査です。exit判断は機械ルールを優先します。
+- ニュースを使う場合は、ティッカー、会社名、業種の一致確認を必須にします。

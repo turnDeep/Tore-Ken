@@ -268,7 +268,7 @@ def get_stock_chart(filename: str, current_user: str = Depends(get_current_user_
 
 @app.get("/api/daily/{date_key}")
 def get_daily_data(date_key: str, current_user: str = Depends(get_current_user)):
-    """Returns the daily data (Strong Stocks, Status) for a specific date (YYYYMMDD)."""
+    """Returns the daily data and Recognition Gap ranking for a specific date (YYYYMMDD)."""
     # Validation
     if not re.match(r'^\d{8}$', date_key):
          raise HTTPException(status_code=400, detail="Invalid date format.")
@@ -305,6 +305,36 @@ def get_latest_data(current_user: str = Depends(get_current_user)):
         print(f"Error reading latest market data: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Could not retrieve market data.")
+
+@app.get("/api/recognition-gap-ranking")
+def get_recognition_gap_ranking(current_user: str = Depends(get_current_user)):
+    """Returns the latest Recognition Gap EP 7-layer ranking."""
+    path = os.path.join(DATA_DIR, "recognition_gap_ranking.json")
+    if not os.path.exists(path):
+        latest_path = os.path.join(DATA_DIR, "latest.json")
+        if os.path.exists(latest_path):
+            with open(latest_path, "r", encoding="utf-8") as f:
+                latest = json.load(f)
+            return {
+                "date": latest.get("date"),
+                "ranking": latest.get("recognition_gap_ranking", []),
+                "meta": latest.get("recognition_gap_meta", {}),
+            }
+        raise HTTPException(status_code=404, detail="Recognition Gap ranking not found.")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+@app.get("/api/x-ranking-image/{date_key}/{filename}")
+def get_x_ranking_image(date_key: str, filename: str, current_user: str = Depends(get_current_user_for_notification)):
+    """Returns a rendered X ranking image."""
+    if not re.match(r'^\d{8}$', date_key):
+        raise HTTPException(status_code=400, detail="Invalid date format.")
+    if not re.match(r'^x_ranking_\d{2}_\d{2}\.png$', filename):
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+    path = os.path.join(DATA_DIR, "x_ranking_posts", date_key, filename)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="X ranking image not found.")
+    return FileResponse(path)
 
 @app.get("/api/vapid-public-key")
 def get_vapid_public_key():

@@ -540,7 +540,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cursor.style.display = 'block';
         }
 
-        // Fetch Daily Data (Strong Stocks)
+        // Fetch Daily Data (Recognition Gap EP ranking)
         const contentDiv = document.getElementById('strong-stocks-content');
         contentDiv.innerHTML = '<div class="loading-spinner-small"></div>';
 
@@ -548,15 +548,90 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetchWithAuth(`/api/daily/${dateKey}`);
             if (response.ok) {
                 const data = await response.json();
-                renderStrongStocks(data.strong_stocks);
+                renderRecognitionGapRanking(data.recognition_gap_ranking || data.ranking || data.strong_stocks || []);
             } else {
                 // Check if this date is 'today' or close enough?
                 // Or simply show no data
-                contentDiv.innerHTML = '<p style="text-align: center; color: #757575;">No Strong Stocks data available for this date.</p>';
+                contentDiv.innerHTML = '<p style="text-align: center; color: #757575;">Recognition Gap EPランキングはまだありません。</p>';
             }
         } catch (error) {
-             contentDiv.innerHTML = '<p style="text-align: center; color: #757575;">Error loading data.</p>';
+             contentDiv.innerHTML = '<p style="text-align: center; color: #757575;">ランキングの読み込みに失敗しました。</p>';
         }
+    }
+
+    function formatPercentValue(value) {
+        if (value === undefined || value === null || value === '') return '-';
+        const num = Number(value);
+        if (Number.isNaN(num)) return String(value);
+        if (Math.abs(num) <= 20) return `${num >= 0 ? '+' : ''}${(num * 100).toFixed(1)}%`;
+        return `${num >= 0 ? '+' : ''}${num.toFixed(1)}%`;
+    }
+
+    function renderRecognitionGapRanking(stocks) {
+        const contentDiv = document.getElementById('strong-stocks-content');
+        if (!stocks || stocks.length === 0) {
+            contentDiv.innerHTML = '<p style="text-align: center;">Recognition Gap EP候補はありません。</p>';
+            return;
+        }
+
+        const rows = [...stocks].sort((a, b) => {
+            const rankA = Number(a.rank || 9999);
+            const rankB = Number(b.rank || 9999);
+            return rankA - rankB;
+        });
+
+        contentDiv.innerHTML = '';
+
+        const header = document.createElement('div');
+        header.style.cssText = 'margin-bottom: 10px; font-size: 0.9em; text-align: right; color: #555;';
+        header.textContent = `Recognition Gap EP 7層ランキング: ${rows.length}銘柄`;
+        contentDiv.appendChild(header);
+
+        const table = document.createElement('table');
+        table.className = 'strong-stocks-table recognition-gap-table';
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>順位</th>
+                    <th>銘柄</th>
+                    <th>Entry</th>
+                    <th>含み益</th>
+                    <th>State</th>
+                    <th>要点</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        `;
+        const tbody = table.querySelector('tbody');
+
+        rows.forEach(s => {
+            const tr = document.createElement('tr');
+            const summary = s.seven_layer_summary_ja || s.summary_ja || s.summary || '';
+            const state = s.thesis_state || '';
+            const substate = s.thesis_substate ? ` / ${s.thesis_substate}` : '';
+
+            const appendCell = (text, strong = false) => {
+                const td = document.createElement('td');
+                if (strong) {
+                    const bold = document.createElement('strong');
+                    bold.textContent = text;
+                    td.appendChild(bold);
+                } else {
+                    td.textContent = text;
+                }
+                tr.appendChild(td);
+            };
+
+            appendCell(s.rank || '');
+            appendCell(s.symbol || s.ticker || '', true);
+            appendCell(s.entry_date || s.entry || '-');
+            appendCell(formatPercentValue(s.return_since_entry ?? s.return ?? s.gain));
+            appendCell(`${state}${substate}`);
+            appendCell(summary);
+            tbody.appendChild(tr);
+        });
+
+        contentDiv.appendChild(table);
     }
 
     function renderStrongStocks(stocks) {
