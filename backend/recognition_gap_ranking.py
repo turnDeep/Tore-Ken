@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
+from backend.summary_style import compose_seven_layer_summary
 
 try:
     from numba import njit
@@ -485,24 +486,44 @@ def _risk_notes(supply_severity: str, price_state: str, data_integrity: str, adr
 
 def _summary(
     symbol: str,
+    company: str,
+    sector: str,
     industry: str,
     price_state: str,
     volume_state: str,
     supply_severity: str,
     catalyst: str,
     fundamental: str,
+    thesis_state: str,
+    thesis_substate: str,
     ret60_resid_spy: float,
     dv_persistence: float,
+    up_down_ratio: float,
     ret_since_entry: float,
+    ret126: float,
+    ret252: float,
+    adr_or_non_us: bool,
 ) -> str:
-    industry_text = industry or "業種未取得"
-    text = (
-        f"{industry_text}。価格は{price_state}、出来高は{volume_state}で、EP後の資金流入維持を重視。"
-        f"対SPY60日残差は{_pct(ret60_resid_spy)}、出来高維持率は{dv_persistence:.2f}倍。"
-        f"供給リスクは{supply_severity}、カタリストは{catalyst}、ファンダ確認は{fundamental}。"
-        f"Entry後{_pct(ret_since_entry)}だが売買判断は機械exitを優先。"
+    return compose_seven_layer_summary(
+        symbol=symbol,
+        company=company,
+        sector=sector,
+        industry=industry,
+        price_state=price_state,
+        volume_state=volume_state,
+        supply_severity=supply_severity,
+        catalyst=catalyst,
+        fundamental=fundamental,
+        thesis_state=thesis_state,
+        thesis_substate=thesis_substate,
+        ret60_resid_spy=ret60_resid_spy,
+        dv_persistence=dv_persistence,
+        up_down_ratio=up_down_ratio,
+        ret_since_entry=ret_since_entry,
+        ret126=ret126,
+        ret252=ret252,
+        adr_or_non_us=adr_or_non_us,
     )
-    return _trim(text, 300)
 
 
 def build_recognition_gap_ranking(
@@ -647,15 +668,23 @@ def build_recognition_gap_ranking(
                 risk_notes_ja=_risk_notes(supply_severity, price_state, data_integrity, adr_or_non_us),
                 seven_layer_summary_ja=_summary(
                     symbol,
+                    company,
+                    sector,
                     industry,
                     price_state,
                     volume_state,
                     supply_severity,
                     catalyst,
                     fundamental,
+                    thesis_state,
+                    thesis_substate,
                     ret60_resid_spy,
                     dv_persistence if np.isfinite(dv_persistence) else 1.0,
+                    up_down,
                     ret_since_entry,
+                    ret126,
+                    ret252,
+                    adr_or_non_us,
                 ),
                 recommendation_priority=priority,
                 ret20=round(ret20, 6),

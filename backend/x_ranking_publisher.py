@@ -11,6 +11,11 @@ import pandas as pd
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 
+try:
+    from backend.summary_style import compose_seven_layer_summary
+except Exception:  # pragma: no cover - direct script fallback
+    compose_seven_layer_summary = None
+
 
 load_dotenv()
 
@@ -79,6 +84,13 @@ def get_first(row: pd.Series, names: list[str]) -> str:
     return ""
 
 
+def should_rewrite_summary(summary: str) -> bool:
+    summary = clean(summary)
+    if not summary:
+        return True
+    return any(marker in summary for marker in ("FMP profileで", "ニュース文脈:"))
+
+
 def load_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
     candidates = [
         r"C:\Windows\Fonts\meiryob.ttc" if bold else r"C:\Windows\Fonts\meiryo.ttc",
@@ -129,7 +141,7 @@ def trim_chars(text: str, max_chars: int) -> str:
     return text[: max_chars - 1].rstrip("、。,. ") + "…"
 
 
-def normalize_rows(csv_path: Path, top_n: int | None = None) -> list[dict[str, str]]:
+def normalize_rows(csv_path: Path, top_n: int | None = None, rewrite_summary: bool = False) -> list[dict[str, str]]:
     if not csv_path.exists():
         raise FileNotFoundError(f"ranking CSV not found: {csv_path}")
     df = pd.read_csv(csv_path)
@@ -145,7 +157,30 @@ def normalize_rows(csv_path: Path, top_n: int | None = None) -> list[dict[str, s
         if not symbol:
             continue
         summary = get_first(row, ["seven_layer_summary_ja", "summary_ja", "summary", "要点"])
-        if not summary:
+        if (rewrite_summary or should_rewrite_summary(summary)) and compose_seven_layer_summary is not None:
+            summary = compose_seven_layer_summary(
+                symbol=symbol,
+                company=get_first(row, ["company", "company_name", "name"]),
+                sector=get_first(row, ["sector", "Sector"]),
+                industry=get_first(row, ["industry", "Industry"]),
+                price_state=get_first(row, ["price_trend"]),
+                volume_state=get_first(row, ["volume_demand_durability", "volume_state"]),
+                supply_severity=get_first(row, ["supply_risk_severity"]),
+                catalyst=get_first(row, ["catalyst_quality"]),
+                fundamental=get_first(row, ["fundamental_confirmation"]),
+                thesis_state=get_first(row, ["thesis_state", "stable_thesis_state"]),
+                thesis_substate=get_first(row, ["thesis_substate"]),
+                ret60_resid_spy=get_first(row, ["ret60_resid_spy"]),
+                dv_persistence=get_first(row, ["post_signal_dv_persistence"]),
+                up_down_ratio=get_first(row, ["up_down_volume_ratio_20d"]),
+                ret_since_entry=get_first(row, ["return_since_entry", "return", "gain"]),
+                ret126=get_first(row, ["ret126"]),
+                ret252=get_first(row, ["ret252"]),
+                revenue_yoy=get_first(row, ["rev_yoy_fmp", "rev_yoy", "revenue_yoy"]),
+                eps=get_first(row, ["latest_eps_fmp", "eps"]),
+                adr_or_non_us=str(get_first(row, ["adr_or_non_us"])).lower() in {"true", "1", "yes"},
+            )
+        elif not summary:
             price = get_first(row, ["price_trend"])
             volume = get_first(row, ["volume_demand_durability", "volume_state"])
             supply = get_first(row, ["supply_risk_severity", "institutional_and_supply"])
@@ -304,9 +339,10 @@ def publish(
     post_x: bool = False,
     include_title: bool = False,
     post_text_limit: int | None = 20,
+    rewrite_summary: bool = False,
     out_dir: Path | None = None,
 ) -> dict[str, Any]:
-    rows = normalize_rows(ranking_csv, top_n=top_n)
+    rows = normalize_rows(ranking_csv, top_n=top_n, rewrite_summary=rewrite_summary)
     if asof_label is None:
         asof_label = datetime.now().strftime("%Y-%m-%d")
     out_dir = out_dir or DEFAULT_OUT_ROOT / asof_label.replace("-", "")
@@ -334,6 +370,7 @@ def main() -> None:
     parser.add_argument("--include-title", action="store_true")
     parser.add_argument("--post-text-limit", type=int, default=20)
     parser.add_argument("--all-tickers-in-text", action="store_true")
+    parser.add_argument("--rewrite-summary", action="store_true", help="Regenerate image summaries from structured 7-layer fields.")
     parser.add_argument("--out-dir", type=Path, default=None)
     args = parser.parse_args()
 
@@ -344,6 +381,7 @@ def main() -> None:
         post_x=args.post_x,
         include_title=args.include_title,
         post_text_limit=None if args.all_tickers_in_text else args.post_text_limit,
+        rewrite_summary=args.rewrite_summary,
         out_dir=args.out_dir,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))

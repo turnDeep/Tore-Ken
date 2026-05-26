@@ -41,7 +41,12 @@ Tore-Kenは、米国株約3000銘柄の日足データから「Recognition Gap E
   - 画像には `順位 / 銘柄 / Entry / 含み益 / 要点` を表示します。
   - 本文は `$SIMO $BW ...` のように20銘柄分のティッカーだけを投稿できます。
   - 検証時は `--all-tickers-in-text` でCSV内の全ティッカーを本文に含められます。
+  - FMP見出し貼り付け型の要点は使わず、価格・出来高・業種文脈・ファンダ・供給リスクを統合した要点に寄せます。
   - `X_POST_ENABLED=false` の場合は投稿せず画像だけ作成します。
+
+- `backend/summary_style.py`
+  - 画像やランキングCSVに載せる要点の共通スタイルを定義します。
+  - Codexがこれまで書いていたような、売買命令ではなく「thesisの質」を説明する300字要点を作ります。
 
 - FastAPI
   - `/api/recognition-gap-ranking`
