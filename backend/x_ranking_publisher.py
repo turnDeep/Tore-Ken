@@ -212,7 +212,8 @@ def draw_ranking_image(rows: list[dict[str, str]], start_rank: int, end_rank: in
 
 def render_images(rows: list[dict[str, str]], out_dir: Path, asof_label: str) -> list[Path]:
     paths: list[Path] = []
-    for chunk_index in range(4):
+    chunk_count = (len(rows) + 4) // 5
+    for chunk_index in range(chunk_count):
         start = chunk_index * 5
         chunk = rows[start : start + 5]
         if not chunk:
@@ -225,8 +226,14 @@ def render_images(rows: list[dict[str, str]], out_dir: Path, asof_label: str) ->
     return paths
 
 
-def build_post_text(rows: list[dict[str, str]], asof_label: str, include_title: bool = False) -> str:
-    tickers = " ".join(f"${row['symbol']}" for row in rows[:20])
+def build_post_text(
+    rows: list[dict[str, str]],
+    asof_label: str,
+    include_title: bool = False,
+    max_symbols: int | None = 20,
+) -> str:
+    post_rows = rows if max_symbols is None else rows[:max_symbols]
+    tickers = " ".join(f"${row['symbol']}" for row in post_rows)
     if include_title:
         return f"Recognition Gap EP 7層ランキング {asof_label}\n{tickers}"
     return tickers
@@ -283,6 +290,7 @@ def publish(
     top_n: int = 20,
     post_x: bool = False,
     include_title: bool = False,
+    post_text_limit: int | None = 20,
     out_dir: Path | None = None,
 ) -> dict[str, Any]:
     rows = normalize_rows(ranking_csv, top_n=top_n)
@@ -290,7 +298,7 @@ def publish(
         asof_label = datetime.now().strftime("%Y-%m-%d")
     out_dir = out_dir or DEFAULT_OUT_ROOT / asof_label.replace("-", "")
     image_paths = render_images(rows, out_dir, asof_label)
-    text = build_post_text(rows, asof_label, include_title=include_title)
+    text = build_post_text(rows, asof_label, include_title=include_title, max_symbols=post_text_limit)
 
     result: dict[str, Any] = {
         "asof_label": asof_label,
@@ -311,6 +319,8 @@ def main() -> None:
     parser.add_argument("--top-n", type=int, default=20)
     parser.add_argument("--post-x", action="store_true")
     parser.add_argument("--include-title", action="store_true")
+    parser.add_argument("--post-text-limit", type=int, default=20)
+    parser.add_argument("--all-tickers-in-text", action="store_true")
     parser.add_argument("--out-dir", type=Path, default=None)
     args = parser.parse_args()
 
@@ -320,6 +330,7 @@ def main() -> None:
         top_n=args.top_n,
         post_x=args.post_x,
         include_title=args.include_title,
+        post_text_limit=None if args.all_tickers_in_text else args.post_text_limit,
         out_dir=args.out_dir,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))

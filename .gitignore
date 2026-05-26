@@ -13,3 +13,6 @@ __pycache__/
 
 # Local secrets
 .env
+
+# Local verification and model-review artifacts
+/agents/
