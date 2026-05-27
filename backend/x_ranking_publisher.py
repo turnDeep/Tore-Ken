@@ -306,8 +306,8 @@ def normalize_rows(
             fundamental = get_first(row, ["fundamental_confirmation"])
             industry = get_first(row, ["industry", "Industry"])
             summary = (
-                f"{industry}。価格は{price}、出来高は{volume}、供給リスクは{supply}。"
-                f"カタリストは{catalyst}、ファンダ確認は{fundamental}。"
+                f"{industry}。価格は{price}、出来高は{volume}、株式需給リスクは{supply}。"
+                f"材料は{catalyst}、業績確認は{fundamental}。"
             )
 
         rows.append(
@@ -350,7 +350,7 @@ def draw_ranking_image(rows: list[dict[str, str]], start_rank: int, end_rank: in
 
     draw.text((col_rank, header_y), "順位", font=header_font, fill=white)
     draw.text((col_symbol, header_y), "銘柄", font=header_font, fill=white)
-    draw.text((col_entry, header_y), "Entry", font=header_font, fill=white)
+    draw.text((col_entry, header_y), "入口日", font=header_font, fill=white)
     draw.text((col_return, header_y), "含み益", font=header_font, fill=white)
     draw.text((col_summary, header_y), "要点", font=header_font, fill=white)
     draw.line((margin_x, table_top, right, table_top), fill=line, width=2)
@@ -369,7 +369,7 @@ def draw_ranking_image(rows: list[dict[str, str]], start_rank: int, end_rank: in
             body_y += 34
 
     draw.line((margin_x, table_top + len(rows) * row_h, right, table_top + len(rows) * row_h), fill=line, width=1)
-    footer = f"{asof_label} / Rank {start_rank}-{end_rank} / exitは機械ルール優先"
+    footer = f"{asof_label} / 順位 {start_rank}-{end_rank} / 出口は機械ルール優先"
     draw.text((margin_x, height - 48), footer, font=footer_font, fill=subtle)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -401,7 +401,7 @@ def build_post_text(
     post_rows = rows if max_symbols is None else rows[:max_symbols]
     tickers = " ".join(f"${row['symbol']}" for row in post_rows)
     if include_title:
-        return f"Recognition Gap EP 7層ランキング {asof_label}\n{tickers}"
+        return f"認識ズレ型EP 7層ランキング {asof_label}\n{tickers}"
     return tickers
 
 

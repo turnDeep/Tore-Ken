@@ -474,14 +474,15 @@ def _priority_points(
 def _risk_notes(supply_severity: str, price_state: str, data_integrity: str, adr_or_non_us: bool) -> str:
     notes: list[str] = []
     if supply_severity in {"medium", "high"}:
-        notes.append(f"供給リスク{ supply_severity }")
+        severity_ja = {"medium": "中程度", "high": "高い"}.get(supply_severity, supply_severity)
+        notes.append(f"株式需給リスク{severity_ja}")
     if price_state == "extended_but_intact":
         notes.append("伸び切り監視")
     if data_integrity != "clean":
         notes.append("銘柄エンティティ確認")
     if adr_or_non_us:
-        notes.append("ADR/非米国リスク")
-    return "、".join(notes) if notes else "機械exit優先。重大ニュースのみthesis変更候補。"
+        notes.append("米国外企業リスク")
+    return "、".join(notes) if notes else "機械的な出口ルール優先。重大ニュースのみ見立て変更候補。"
 
 
 def _summary(
@@ -735,15 +736,15 @@ def build_recognition_gap_ranking(
         "date": asof,
         "asof_date": asof,
         "generated_at": datetime.now().isoformat(),
-        "system": "Recognition Gap EP 7-layer ranking",
+        "system": "認識ズレ型EP 7層ランキング",
         "entry_rule": "industry_theme_ep_ex_biotech",
         "entry_timing": "pullback10",
         "exit_rule": "stage2_or_atr8",
         "ranking": [asdict(row) for row in rows],
         "notes": [
-            "Ranking is for monitoring and replacement comparison, not an automated buy order.",
-            "Exit remains mechanical; thesis layers explain durability and risks.",
-            "Do not use post-asof data when running historical reports.",
+            "ランキングは監視と乗り換え比較用であり、自動買付指示ではありません。",
+            "出口は機械ルールを優先し、7層評価は持続力とリスクを説明します。",
+            "過去日付で検証する場合、その日より後の情報は使いません。",
         ],
     }
     return result
