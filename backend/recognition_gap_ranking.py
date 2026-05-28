@@ -29,6 +29,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
 PRICE_DATA_PATH = DATA_DIR / "price_data_ohlcv.pkl"
 PROFILE_CACHE_PATH = DATA_DIR / "recognition_gap_profiles.json"
+FUNDAMENTAL_CACHE_PATH = DATA_DIR / "recognition_gap_fundamentals.json"
 RANKING_JSON_PATH = DATA_DIR / "recognition_gap_ranking.json"
 RANKING_CSV_PATH = DATA_DIR / "recognition_gap_ranking.csv"
 
@@ -47,6 +48,7 @@ DEFAULT_TOP_N = parse_top_n(os.getenv("RECOGNITION_GAP_TOP_N", "0"))
 MIN_CLOSE = float(os.getenv("RECOGNITION_GAP_MIN_CLOSE", "1.5"))
 MIN_DOLLAR_VOLUME20 = float(os.getenv("RECOGNITION_GAP_MIN_DOLLAR_VOLUME20", "1000000"))
 MAX_PROFILE_FETCH = int(os.getenv("RECOGNITION_GAP_PROFILE_FETCH_LIMIT", "350"))
+MAX_FUNDAMENTAL_FETCH = int(os.getenv("RECOGNITION_GAP_FUNDAMENTAL_FETCH_LIMIT", "150"))
 
 BIOTECH_TERMS = (
     "biotechnology",
@@ -118,6 +120,14 @@ class RecognitionGapRow:
     country: str
     market_cap: float | None
     adr_or_non_us: bool
+    revenue_yoy: float | None
+    revenue_qoq: float | None
+    revenue_yoy_prev: float | None
+    latest_eps: float | None
+    eps_yoy: float | None
+    eps_qoq: float | None
+    eps_yoy_prev: float | None
+    eps_qoq_prev: float | None
     data_integrity: str
     price_trend: str
     volume_demand_durability: str
@@ -232,6 +242,122 @@ def _load_profile_cache() -> dict[str, dict[str, Any]]:
 def _save_profile_cache(profiles: dict[str, dict[str, Any]]) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     PROFILE_CACHE_PATH.write_text(json.dumps(profiles, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_fundamental_cache() -> dict[str, dict[str, Any]]:
+    if not FUNDAMENTAL_CACHE_PATH.exists():
+        return {}
+    try:
+        cached = json.loads(FUNDAMENTAL_CACHE_PATH.read_text(encoding="utf-8"))
+        return {key.upper(): value for key, value in cached.items() if isinstance(value, dict)}
+    except Exception as exc:
+        logger.warning("failed to read fundamental cache: %s", exc)
+        return {}
+
+
+def _save_fundamental_cache(cache: dict[str, dict[str, Any]]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    FUNDAMENTAL_CACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _parse_date(value: Any) -> pd.Timestamp | None:
+    text = _clean_text(value)
+    if not text:
+        return None
+    try:
+        ts = pd.Timestamp(text)
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert(None)
+        return ts.normalize()
+    except Exception:
+        return None
+
+
+def _statement_available(item: dict[str, Any], asof_ts: pd.Timestamp | None) -> bool:
+    if asof_ts is None:
+        return True
+    asof_ts = asof_ts.normalize()
+    filing = _parse_date(item.get("acceptedDate") or item.get("fillingDate") or item.get("filingDate"))
+    if filing is not None:
+        return filing <= asof_ts
+    period_end = _parse_date(item.get("date"))
+    return bool(period_end is not None and period_end <= asof_ts)
+
+
+def _growth(current: Any, base: Any) -> float:
+    current_value = _safe_float(current, math.nan)
+    base_value = _safe_float(base, math.nan)
+    if not np.isfinite(current_value) or not np.isfinite(base_value) or base_value == 0:
+        return math.nan
+    return current_value / abs(base_value) - 1
+
+
+def _compute_fundamentals(items: list[dict[str, Any]], asof_ts: pd.Timestamp | None = None) -> dict[str, float | None]:
+    usable = [item for item in items if isinstance(item, dict) and _statement_available(item, asof_ts)]
+    usable.sort(key=lambda item: _parse_date(item.get("date")) or pd.Timestamp.min, reverse=True)
+    if not usable:
+        return {}
+    latest = usable[0]
+    prev_q = usable[1] if len(usable) > 1 else {}
+    prev_prev_q = usable[2] if len(usable) > 2 else {}
+    year_ago = usable[4] if len(usable) > 4 else {}
+    prev_year_ago = usable[5] if len(usable) > 5 else {}
+    latest_eps = _safe_float(latest.get("eps") or latest.get("epsdiluted"), math.nan)
+    prev_eps = _safe_float(prev_q.get("eps") or prev_q.get("epsdiluted"), math.nan)
+    prev_prev_eps = _safe_float(prev_prev_q.get("eps") or prev_prev_q.get("epsdiluted"), math.nan)
+    year_ago_eps = _safe_float(year_ago.get("eps") or year_ago.get("epsdiluted"), math.nan)
+    prev_year_ago_eps = _safe_float(prev_year_ago.get("eps") or prev_year_ago.get("epsdiluted"), math.nan)
+
+    return {
+        "revenue_yoy": _growth(latest.get("revenue"), year_ago.get("revenue")),
+        "revenue_qoq": _growth(latest.get("revenue"), prev_q.get("revenue")),
+        "revenue_yoy_prev": _growth(prev_q.get("revenue"), prev_year_ago.get("revenue")),
+        "latest_eps": latest_eps if np.isfinite(latest_eps) else None,
+        "eps_yoy": _growth(latest_eps, year_ago_eps),
+        "eps_qoq": _growth(latest_eps, prev_eps),
+        "eps_yoy_prev": _growth(prev_eps, prev_year_ago_eps),
+        "eps_qoq_prev": _growth(prev_eps, prev_prev_eps),
+    }
+
+
+def _fetch_fundamentals(
+    symbol: str,
+    cache: dict[str, dict[str, Any]],
+    fetch_state: dict[str, int],
+    asof_ts: pd.Timestamp | None = None,
+) -> dict[str, float | None]:
+    cached = cache.get(symbol.upper())
+    if cached and isinstance(cached.get("income_statement_quarterly"), list):
+        return _compute_fundamentals(cached["income_statement_quarterly"], asof_ts)
+
+    api_key = os.getenv("FMP_API_KEY", "").strip()
+    if not api_key or api_key.lower().startswith("your_"):
+        return {}
+    if fetch_state.get("count", 0) >= MAX_FUNDAMENTAL_FETCH:
+        return {}
+
+    try:
+        import requests
+    except Exception:
+        logger.warning("requests is not installed; skipping FMP fundamental enrichment")
+        return {}
+
+    url = f"https://financialmodelingprep.com/api/v3/income-statement/{symbol}"
+    try:
+        response = requests.get(url, params={"period": "quarter", "limit": 12, "apikey": api_key}, timeout=20)
+        response.raise_for_status()
+        payload = response.json()
+        fetch_state["count"] = fetch_state.get("count", 0) + 1
+        if not isinstance(payload, list):
+            return {}
+        cache[symbol.upper()] = {
+            "fetched_at": datetime.now().isoformat(),
+            "income_statement_quarterly": payload,
+        }
+        return _compute_fundamentals(payload, asof_ts)
+    except Exception as exc:
+        logger.warning("FMP fundamental fetch failed for %s: %s", symbol, exc)
+        return {}
 
 
 def _fetch_missing_profiles(symbols: list[str], profiles: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -417,7 +543,15 @@ def _classify_supply(profile: dict[str, Any], market_cap: float | None, avg_dv20
     return "low_supply_risk", "low"
 
 
-def _classify_fundamental(profile: dict[str, Any], ret126: float, ret252: float) -> str:
+def _classify_fundamental(profile: dict[str, Any], ret126: float, ret252: float, fundamentals: dict[str, Any] | None = None) -> str:
+    fundamentals = fundamentals or {}
+    revenue_yoy = _safe_float(fundamentals.get("revenue_yoy"), math.nan)
+    eps_yoy = _safe_float(fundamentals.get("eps_yoy"), math.nan)
+    eps_qoq = _safe_float(fundamentals.get("eps_qoq"), math.nan)
+    if (np.isfinite(revenue_yoy) and revenue_yoy >= 0.25) or (np.isfinite(eps_yoy) and eps_yoy >= 0.25):
+        return "reported_growth_confirmed"
+    if np.isfinite(eps_qoq) and eps_qoq >= 0.25:
+        return "earnings_reacceleration_watch"
     # This repo keeps fundamentals as an enrichment layer. When FMP statement data is absent,
     # trend persistence plus industry context becomes a conservative proxy, not a hard score.
     industry = _clean_text(profile.get("industry"))
@@ -504,7 +638,13 @@ def _summary(
     ret126: float,
     ret252: float,
     revenue_yoy: float | None,
+    revenue_qoq: float | None,
+    revenue_yoy_prev: float | None,
     eps: float | None,
+    eps_yoy: float | None,
+    eps_qoq: float | None,
+    eps_yoy_prev: float | None,
+    eps_qoq_prev: float | None,
     market_cap: float | None,
     avg_dollar_volume20: float,
     news_text: str,
@@ -529,7 +669,13 @@ def _summary(
         ret126=ret126,
         ret252=ret252,
         revenue_yoy=revenue_yoy,
+        revenue_qoq=revenue_qoq,
+        revenue_yoy_prev=revenue_yoy_prev,
         eps=eps,
+        eps_yoy=eps_yoy,
+        eps_qoq=eps_qoq,
+        eps_yoy_prev=eps_yoy_prev,
+        eps_qoq_prev=eps_qoq_prev,
         market_cap=market_cap,
         avg_dollar_volume20=avg_dollar_volume20,
         news_text=news_text,
@@ -559,6 +705,8 @@ def build_recognition_gap_ranking(
     spy_ret60 = _last_return(spy_close, 60) if spy_close is not None and len(spy_close) else 0.0
 
     profiles = _fetch_missing_profiles(symbols, _load_profile_cache())
+    fundamental_cache = _load_fundamental_cache()
+    fundamental_fetch_state = {"count": 0}
     rows: list[RecognitionGapRow] = []
 
     for symbol in symbols:
@@ -622,13 +770,27 @@ def build_recognition_gap_ranking(
         market_cap = _safe_float(profile.get("mktCap"), math.nan)
         market_cap_value: float | None = float(market_cap) if np.isfinite(market_cap) else None
         adr_or_non_us = bool(country and country.lower() not in {"united states", "usa", "us"})
+        fundamentals = _fetch_fundamentals(
+            symbol,
+            fundamental_cache,
+            fundamental_fetch_state,
+            pd.Timestamp(data.index[-1]) if asof_date else None,
+        )
+        revenue_yoy = _safe_float(fundamentals.get("revenue_yoy"), math.nan)
+        revenue_qoq = _safe_float(fundamentals.get("revenue_qoq"), math.nan)
+        revenue_yoy_prev = _safe_float(fundamentals.get("revenue_yoy_prev"), math.nan)
+        latest_eps = _safe_float(fundamentals.get("latest_eps"), math.nan)
+        eps_yoy = _safe_float(fundamentals.get("eps_yoy"), math.nan)
+        eps_qoq = _safe_float(fundamentals.get("eps_qoq"), math.nan)
+        eps_yoy_prev = _safe_float(fundamentals.get("eps_yoy_prev"), math.nan)
+        eps_qoq_prev = _safe_float(fundamentals.get("eps_qoq_prev"), math.nan)
 
         data_integrity = "clean" if company and (industry or sector) else "needs_entity_check"
         price_state = _classify_price(close)
         volume_state = _classify_volume(volume_ratio20, dv_persistence if np.isfinite(dv_persistence) else 1.0, up_down)
         supply, supply_severity = _classify_supply(profile, market_cap_value, avg_dv20)
         catalyst = _classify_catalyst(profile, float(close.loc[signal_date] / close.iloc[max(0, signal_pos - 20)] - 1))
-        fundamental = _classify_fundamental(profile, ret126, ret252)
+        fundamental = _classify_fundamental(profile, ret126, ret252, fundamentals)
         thesis_state, thesis_substate = _state(price_state, volume_state, supply_severity, data_integrity)
         flags = []
         if price_state == "extended_but_intact":
@@ -666,6 +828,14 @@ def build_recognition_gap_ranking(
                 country=country,
                 market_cap=market_cap_value,
                 adr_or_non_us=adr_or_non_us,
+                revenue_yoy=round(revenue_yoy, 6) if np.isfinite(revenue_yoy) else None,
+                revenue_qoq=round(revenue_qoq, 6) if np.isfinite(revenue_qoq) else None,
+                revenue_yoy_prev=round(revenue_yoy_prev, 6) if np.isfinite(revenue_yoy_prev) else None,
+                latest_eps=round(latest_eps, 6) if np.isfinite(latest_eps) else None,
+                eps_yoy=round(eps_yoy, 6) if np.isfinite(eps_yoy) else None,
+                eps_qoq=round(eps_qoq, 6) if np.isfinite(eps_qoq) else None,
+                eps_yoy_prev=round(eps_yoy_prev, 6) if np.isfinite(eps_yoy_prev) else None,
+                eps_qoq_prev=round(eps_qoq_prev, 6) if np.isfinite(eps_qoq_prev) else None,
                 data_integrity=data_integrity,
                 price_trend=price_state,
                 volume_demand_durability=volume_state,
@@ -695,8 +865,14 @@ def build_recognition_gap_ranking(
                     ret_since_entry,
                     ret126,
                     ret252,
-                    None,
-                    None,
+                    revenue_yoy if np.isfinite(revenue_yoy) else None,
+                    revenue_qoq if np.isfinite(revenue_qoq) else None,
+                    revenue_yoy_prev if np.isfinite(revenue_yoy_prev) else None,
+                    latest_eps if np.isfinite(latest_eps) else None,
+                    eps_yoy if np.isfinite(eps_yoy) else None,
+                    eps_qoq if np.isfinite(eps_qoq) else None,
+                    eps_yoy_prev if np.isfinite(eps_yoy_prev) else None,
+                    eps_qoq_prev if np.isfinite(eps_qoq_prev) else None,
                     market_cap_value,
                     avg_dv20,
                     "",
@@ -730,6 +906,8 @@ def build_recognition_gap_ranking(
         rows = rows[:row_limit]
     for idx, row in enumerate(rows, start=1):
         row.rank = idx
+    if fundamental_fetch_state.get("count", 0):
+        _save_fundamental_cache(fundamental_cache)
 
     asof = data.index[-1].strftime("%Y-%m-%d")
     result = {

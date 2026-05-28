@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 
 
@@ -38,6 +39,32 @@ def ratio_text(value: Any) -> str:
     if not math.isfinite(number):
         return "-"
     return f"{number:.2f}倍"
+
+
+def is_finite(value: Any) -> bool:
+    return math.isfinite(safe_float(value))
+
+
+def value_direction(current: Any, previous: Any) -> str:
+    cur = safe_float(current)
+    prev = safe_float(previous)
+    if not math.isfinite(cur) or not math.isfinite(prev):
+        return ""
+    if cur < 0 and prev < 0:
+        if cur > prev + 0.05:
+            return "改善"
+        if cur < prev - 0.05:
+            return "悪化"
+        return "横ばい"
+    if cur < 0 <= prev:
+        return "悪化"
+    if cur >= 0 > prev:
+        return "改善"
+    if cur > prev + 0.05:
+        return "加速"
+    if cur < prev - 0.05:
+        return "減速"
+    return "横ばい"
 
 
 SEVERITY_LABEL_JA = {
@@ -166,42 +193,84 @@ def theme_phrase(industry: str = "", sector: str = "") -> str:
 
 def price_phrase(price_state: str, ret_since_entry: Any = None) -> str:
     state = clean_text(price_state)
+    ret = safe_float(ret_since_entry)
+    if math.isfinite(ret) and ret >= 5.0:
+        return f"価格は入口後{pct_text(ret)}まで伸びた大化け組で、過熱より崩れの有無を優先確認"
+    if state == "weakening":
+        return "価格は弱まり始めており、上位保有候補からは一段落ちる"
+    if state == "early_trend_unconfirmed":
+        return "価格は初動寄りで、長期移動平均線の裏付けはまだ不足"
     if not state:
-        ret = safe_float(ret_since_entry)
-        if math.isfinite(ret):
-            if ret >= 3.0:
-                return "価格は大化け級に伸びた実績があり、崩れは機械的な出口ルールで監視する段階"
-            if ret >= 0.5:
-                return "価格は入口後に十分伸びており、上昇継続を機械ルールで確認したい"
-            if ret > 0:
-                return "価格は入口後プラス圏だが、上位候補ほどの伸びはまだ限定的"
-        return "価格構造は日足移動平均線と上昇局面で確認する段階"
+        return ""
     return {
-        "extended_but_intact": "価格は大きく伸びているが主要移動平均線上で崩れておらず、見立ては維持",
-        "strong": "価格トレンドは強く、10・20・50日移動平均線の構造も崩れていない",
-        "constructive": "価格は初動後の押し目/再上昇確認段階で、まだ建設的",
-        "mixed": "価格は強弱混在で、上位候補ほどの直線的な強さはまだ弱い",
-        "weakening": "価格は弱まり始めており、機械的な出口ルールに近づくなら優先度は落ちる",
-        "early_trend_unconfirmed": "価格は初動寄りで、長期移動平均線構造の確認はまだ不足",
-    }.get(state, "価格構造は日足移動平均線と上昇局面で確認する段階")
+        "extended_but_intact": "価格は伸び切り気味でも主要移動平均線上を維持",
+        "strong": "価格は10・20・50日線の並びが良く、上昇局面を維持",
+        "constructive": "価格は初動後の押し目から再上昇を試す段階",
+        "mixed": "価格は強弱混在で、出来高や業績の裏取りが必要",
+    }.get(state, "")
 
 
 def volume_phrase(volume_state: str, dv_persistence: Any = None, up_down_ratio: Any = None) -> str:
     state = clean_text(volume_state)
-    details = []
-    if math.isfinite(safe_float(dv_persistence)):
-        details.append(f"出来高維持率{ratio_text(dv_persistence)}")
-    if math.isfinite(safe_float(up_down_ratio)):
-        details.append(f"上昇日出来高比{ratio_text(up_down_ratio)}")
-    suffix = f"（{ '、'.join(details) }）" if details else ""
-    if not state:
-        return f"出来高は日足側の急騰起点後維持率で確認し、資金流入が残るかが焦点{suffix}"
-    return {
-        "durable_accumulation": f"出来高は急騰起点後も持続し、機関投資家の買い継続を疑える強さ{suffix}",
-        "supportive": f"出来高は支えがあり、資金流入はまだ残っている{suffix}",
-        "neutral": f"出来高は中立で、価格主導の候補として追加確認が必要{suffix}",
-        "fading": f"出来高は鈍化気味で、認識ズレの持続力には注意{suffix}",
-    }.get(state, f"出来高は日足側の急騰起点後維持率で確認し、資金流入が残るかが焦点{suffix}")
+    dv = safe_float(dv_persistence)
+    up_down = safe_float(up_down_ratio)
+    if math.isfinite(dv) and math.isfinite(up_down):
+        if dv >= 2.0 and up_down >= 1.3:
+            return f"出来高維持率{ratio_text(dv)}、上昇日出来高比{ratio_text(up_down)}で買い需要が濃い"
+        if dv >= 1.25 and up_down >= 1.0:
+            return f"出来高維持率{ratio_text(dv)}、上昇日優勢で急騰後の需要が残る"
+        if dv < 0.8 or up_down < 0.7:
+            return f"出来高維持率{ratio_text(dv)}、上昇日出来高比{ratio_text(up_down)}で資金流入は鈍化"
+    if math.isfinite(dv):
+        if dv >= 2.0:
+            return f"出来高維持率{ratio_text(dv)}で、急騰後も売買代金が落ちにくい"
+        if dv < 0.8:
+            return f"出来高維持率{ratio_text(dv)}で、初動後の関心低下に注意"
+    if state == "fading":
+        return "出来高は鈍化気味で、認識ズレの持続力には注意"
+    return ""
+
+
+def news_signal_phrase(news_text: str = "") -> str:
+    text = clean_text(news_text)
+    lower = text.lower()
+    if not lower:
+        return ""
+    signals = []
+    contract_amount = re.search(r"\$([0-9]+(?:\.[0-9]+)?)\s*(million|billion)[^|.]{0,80}contract", lower)
+    if contract_amount:
+        unit = "億ドル" if contract_amount.group(2) == "billion" else "百万ドル"
+        signals.append(f"{contract_amount.group(1)}{unit}契約")
+    revenue_growth = re.search(r"(?:grew revenue|revenue grew|revenue growth)[^0-9]{0,20}([0-9]+(?:\.[0-9]+)?)%", lower)
+    if revenue_growth:
+        signals.append(f"売上{revenue_growth.group(1)}%成長報道")
+    if "backlog" in lower or "受注残" in lower:
+        signals.append("受注残")
+    if any(term in lower for term in ("contract", "award", "order", "booking", "契約", "受注")) and not contract_amount:
+        signals.append("受注・契約")
+    if any(term in lower for term in ("fund disclosed", "institutional", "13f", "stake", "shares worth", "大量保有")):
+        signals.append("機関投資家の買い")
+    if any(term in lower for term in ("revenue", "sales", "売上")) and not revenue_growth:
+        signals.append("売上成長")
+    if any(term in lower for term in ("red flag", "class action", "lawsuit", "investigation", "overvalued")):
+        signals.append("警戒見出し")
+    if not signals:
+        return ""
+    unique = list(dict.fromkeys(signals))
+    return "ニュース文脈は" + "・".join(unique[:3]) + "が焦点"
+
+
+def market_size_phrase(market_cap: Any = None) -> str:
+    cap = safe_float(market_cap)
+    if not math.isfinite(cap):
+        return ""
+    if cap < 300_000_000:
+        return "超小型で値幅は出やすいが、増資や流動性の確認が重要"
+    if cap < 1_000_000_000:
+        return "小型株で、材料が株価に反映されやすい"
+    if cap > 50_000_000_000:
+        return "大型株のため、大化けには業績加速の継続が必要"
+    return ""
 
 
 def business_demand_phrase(
@@ -232,11 +301,9 @@ def business_demand_phrase(
     )
     if has_demand_context:
         return "事業需給は強い。受注・契約・顧客需要の裏取りが再評価を支える"
-    if fundamental_state == "structural_proxy_confirmed" or (math.isfinite(rev) and rev >= 0.3 and structural):
-        return "事業需給は強め。業種需要と売上変化の両面で確認したい"
-    if structural:
-        return "事業需給は確認中。受注残や顧客需要が次の決算で続くかを見る"
-    return "事業需給は未確認。ニュースより決算・受注・受注残で裏取りしたい"
+    if fundamental_state == "structural_proxy_confirmed" and structural:
+        return "業種需要と中期上昇が重なり、事業側の再評価余地がある"
+    return ""
 
 
 def supply_phrase(
@@ -255,12 +322,11 @@ def supply_phrase(
     )
     label = SEVERITY_LABEL_JA.get(severity)
     base = {
-        "low": f"株式需給リスクは{label}。増資や売り出しより価格・出来高を優先して見やすい",
         "medium": f"株式需給リスクは{label}。増資、売り出し、大株主売りの監視は必要",
         "high": f"株式需給リスクは{label}。価格が強くても資金調達や売り圧力を優先監視",
-    }.get(severity, "株式需給リスクは未確定。増資、売り出し、大株主売りは別途確認")
+    }.get(severity, "")
     if adr_or_non_us:
-        base += "。米国外企業要因も確認"
+        base = (base + "。" if base else "") + "米国外企業のため、為替・上場形態・開示タイミングも確認"
     return base
 
 
@@ -269,37 +335,59 @@ def fundamental_phrase(
     ret126: Any = None,
     ret252: Any = None,
     revenue_yoy: Any = None,
+    revenue_qoq: Any = None,
+    revenue_yoy_prev: Any = None,
     eps: Any = None,
+    eps_yoy: Any = None,
+    eps_qoq: Any = None,
+    eps_yoy_prev: Any = None,
+    eps_qoq_prev: Any = None,
 ) -> str:
     rev = safe_float(revenue_yoy)
-    eps_value = safe_float(eps)
+    rev_qoq = safe_float(revenue_qoq)
+    rev_direction = value_direction(revenue_yoy, revenue_yoy_prev)
+    eps_yoy_value = safe_float(eps_yoy)
+    eps_qoq_value = safe_float(eps_qoq)
+    eps_yoy_direction = value_direction(eps_yoy, eps_yoy_prev)
+    eps_qoq_direction = value_direction(eps_qoq, eps_qoq_prev)
+    fragments: list[str] = []
     if math.isfinite(rev):
-        eps_part = f"、1株利益{eps_value:g}" if math.isfinite(eps_value) else ""
-        if rev >= 0.3:
-            return f"直近売上は前年同期比{pct_text(rev)}{eps_part}で、業績変化も価格を支えている"
-        if rev > 0:
-            return f"直近売上は前年同期比{pct_text(rev)}{eps_part}。成長はあるが、大化けには継続確認が必要"
-        return f"直近売上は前年同期比{pct_text(rev)}{eps_part}で、業績面はまだ慎重に見る"
+        direction = f"で{rev_direction}" if rev_direction else ""
+        if rev >= 1.0:
+            fragments.append(f"売上は前年同期比{pct_text(rev)}{direction}、別格の伸び")
+        elif rev >= 0.5:
+            fragments.append(f"売上は前年同期比{pct_text(rev)}{direction}、高成長が明確")
+        elif rev >= 0.25:
+            fragments.append(f"売上は前年同期比{pct_text(rev)}{direction}、価格上昇の裏付けあり")
+        elif rev > 0:
+            fragments.append(f"売上は前年同期比{pct_text(rev)}、成長はあるが加速確認は必要")
+        else:
+            fragments.append(f"売上は前年同期比{pct_text(rev)}で、業績面の裏付けは弱い")
+    if math.isfinite(rev_qoq) and abs(rev_qoq) >= 0.08:
+        fragments.append(f"売上は前期比{pct_text(rev_qoq)}")
+    eps_parts = []
+    if math.isfinite(eps_yoy_value):
+        direction = f"で{eps_yoy_direction}" if eps_yoy_direction else ""
+        eps_parts.append(f"前年同期比{pct_text(eps_yoy_value)}{direction}")
+    if math.isfinite(eps_qoq_value):
+        direction = f"で{eps_qoq_direction}" if eps_qoq_direction else ""
+        eps_parts.append(f"前期比{pct_text(eps_qoq_value)}{direction}")
+    if eps_parts:
+        fragments.append("1株利益は" + "、".join(eps_parts))
+    if fragments:
+        return "。".join(fragments[:3])
     ret126_text = pct_text(ret126)
     if fundamental_state == "structural_proxy_confirmed":
         return f"業種文脈と中期上昇が揃い、構造変化候補として見やすい（126日{ret126_text}）"
-    if fundamental_state == "price_led_needs_fundamental_check":
-        return "価格主導の再評価が先行しており、次の決算・受注・受注残確認が重要"
-    if fundamental_state == "unconfirmed":
-        return "業績確認はまだ弱く、決算・受注・受注残で裏取りしたい"
-    return clean_text(fundamental_state) or "業績確認は要確認"
+    return ""
 
 
 def thesis_phrase(thesis_state: str, thesis_substate: str) -> str:
-    if thesis_state == "thesis_intact":
-        return "見立ては良好で、保有監視の質は高い"
     if thesis_substate == "mixed_strong":
         return "見立ては強弱混在だが、価格と出来高は上位候補に近い"
     if thesis_state == "thesis_damaged":
         return "見立ては傷み気味で、監視は機械的な出口ルール優先"
-    if not clean_text(thesis_state):
-        return ""
-    return "見立ては強弱混在。強い点と確認不足が同居している"
+    return ""
 
 
 def compose_seven_layer_summary(
@@ -322,7 +410,13 @@ def compose_seven_layer_summary(
     ret126: Any = None,
     ret252: Any = None,
     revenue_yoy: Any = None,
+    revenue_qoq: Any = None,
+    revenue_yoy_prev: Any = None,
     eps: Any = None,
+    eps_yoy: Any = None,
+    eps_qoq: Any = None,
+    eps_yoy_prev: Any = None,
+    eps_qoq_prev: Any = None,
     market_cap: Any = None,
     avg_dollar_volume20: Any = None,
     news_text: str = "",
@@ -334,11 +428,25 @@ def compose_seven_layer_summary(
         market_part = f"市場比60日超過分は{pct_text(ret60_resid_spy)}"
     parts = [
         theme_phrase(industry, sector),
-        price_phrase(price_state, ret_since_entry),
+        fundamental_phrase(
+            fundamental,
+            ret126,
+            ret252,
+            revenue_yoy,
+            revenue_qoq,
+            revenue_yoy_prev,
+            eps,
+            eps_yoy,
+            eps_qoq,
+            eps_yoy_prev,
+            eps_qoq_prev,
+        ),
+        news_signal_phrase(news_text),
+        market_size_phrase(market_cap),
         volume_phrase(volume_state, dv_persistence, up_down_ratio),
         business_demand_phrase(industry, sector, news_text, fundamental, revenue_yoy),
-        market_part,
-        fundamental_phrase(fundamental, ret126, ret252, revenue_yoy, eps),
+        market_part if abs(safe_float(ret60_resid_spy, 0.0)) >= 0.15 else "",
+        price_phrase(price_state, ret_since_entry),
         supply_phrase(
             supply_severity,
             adr_or_non_us,
@@ -347,6 +455,5 @@ def compose_seven_layer_summary(
             news_text=news_text,
         ),
         thesis_phrase(thesis_state, thesis_substate),
-        f"入口後{pct_text(ret_since_entry)}だが、売買判断ではなく機械的な出口ルールを優先",
     ]
     return trim_summary("。".join(part.rstrip("。") for part in parts if clean_text(part)) + "。", max_chars)
