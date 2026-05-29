@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import os
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -30,6 +31,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 PRICE_DATA_PATH = DATA_DIR / "price_data_ohlcv.pkl"
 PROFILE_CACHE_PATH = DATA_DIR / "recognition_gap_profiles.json"
 FUNDAMENTAL_CACHE_PATH = DATA_DIR / "recognition_gap_fundamentals.json"
+NEWS_CACHE_PATH = DATA_DIR / "recognition_gap_news.json"
 RANKING_JSON_PATH = DATA_DIR / "recognition_gap_ranking.json"
 RANKING_CSV_PATH = DATA_DIR / "recognition_gap_ranking.csv"
 
@@ -49,6 +51,10 @@ MIN_CLOSE = float(os.getenv("RECOGNITION_GAP_MIN_CLOSE", "1.5"))
 MIN_DOLLAR_VOLUME20 = float(os.getenv("RECOGNITION_GAP_MIN_DOLLAR_VOLUME20", "1000000"))
 MAX_PROFILE_FETCH = int(os.getenv("RECOGNITION_GAP_PROFILE_FETCH_LIMIT", "350"))
 MAX_FUNDAMENTAL_FETCH = int(os.getenv("RECOGNITION_GAP_FUNDAMENTAL_FETCH_LIMIT", "150"))
+MAX_NEWS_FETCH = int(os.getenv("RECOGNITION_GAP_NEWS_FETCH_LIMIT", "150"))
+NEWS_PRE_SIGNAL_DAYS = int(os.getenv("RECOGNITION_GAP_NEWS_PRE_SIGNAL_DAYS", "60"))
+NEWS_RECENT_DAYS = int(os.getenv("RECOGNITION_GAP_NEWS_RECENT_DAYS", "14"))
+NEWS_LIMIT_PER_SYMBOL = int(os.getenv("RECOGNITION_GAP_NEWS_LIMIT_PER_SYMBOL", "100"))
 
 BIOTECH_TERMS = (
     "biotechnology",
@@ -128,6 +134,15 @@ class RecognitionGapRow:
     eps_qoq: float | None
     eps_yoy_prev: float | None
     eps_qoq_prev: float | None
+    news_pre_60d_titles: str
+    news_ep_to_asof_titles: str
+    news_recent_titles: str
+    news_evidence_ja: str
+    backlog_signal: bool
+    contract_signal: bool
+    order_signal: bool
+    institutional_signal: bool
+    warning_signal: bool
     data_integrity: str
     price_trend: str
     volume_demand_durability: str
@@ -260,6 +275,22 @@ def _save_fundamental_cache(cache: dict[str, dict[str, Any]]) -> None:
     FUNDAMENTAL_CACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _load_news_cache() -> dict[str, dict[str, Any]]:
+    if not NEWS_CACHE_PATH.exists():
+        return {}
+    try:
+        cached = json.loads(NEWS_CACHE_PATH.read_text(encoding="utf-8"))
+        return {key.upper(): value for key, value in cached.items() if isinstance(value, dict)}
+    except Exception as exc:
+        logger.warning("failed to read news cache: %s", exc)
+        return {}
+
+
+def _save_news_cache(cache: dict[str, dict[str, Any]]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    NEWS_CACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _parse_date(value: Any) -> pd.Timestamp | None:
     text = _clean_text(value)
     if not text:
@@ -317,6 +348,174 @@ def _compute_fundamentals(items: list[dict[str, Any]], asof_ts: pd.Timestamp | N
         "eps_qoq": _growth(latest_eps, prev_eps),
         "eps_yoy_prev": _growth(prev_eps, prev_year_ago_eps),
         "eps_qoq_prev": _growth(prev_eps, prev_prev_eps),
+    }
+
+
+def _news_item_date(item: dict[str, Any]) -> pd.Timestamp | None:
+    return _parse_date(item.get("publishedDate") or item.get("date"))
+
+
+def _normalize_news_item(item: dict[str, Any], source_type: str) -> dict[str, str]:
+    return {
+        "symbol": _clean_text(item.get("symbol")).upper(),
+        "date": _clean_text(item.get("publishedDate") or item.get("date")),
+        "title": _clean_text(item.get("title")),
+        "text": _clean_text(item.get("text") or item.get("content") or item.get("site")),
+        "source_type": source_type,
+        "url": _clean_text(item.get("url") or item.get("link")),
+    }
+
+
+def _load_symbol_news(
+    symbol: str,
+    cache: dict[str, dict[str, Any]],
+    fetch_state: dict[str, int],
+    from_date: pd.Timestamp,
+    to_date: pd.Timestamp,
+) -> list[dict[str, str]]:
+    symbol = symbol.upper()
+    from_text = from_date.strftime("%Y-%m-%d")
+    to_text = to_date.strftime("%Y-%m-%d")
+    cache_key = f"{symbol}|{from_text}|{to_text}"
+    cached = cache.get(cache_key)
+    if cached and isinstance(cached.get("items"), list):
+        return cached["items"]
+
+    api_key = os.getenv("FMP_API_KEY", "").strip()
+    if not api_key or api_key.lower().startswith("your_"):
+        return []
+    if fetch_state.get("count", 0) >= MAX_NEWS_FETCH:
+        return []
+
+    try:
+        import requests
+    except Exception:
+        logger.warning("requests is not installed; skipping FMP news enrichment")
+        return []
+
+    items: list[dict[str, str]] = []
+    endpoints = [
+        (
+            "https://financialmodelingprep.com/api/v3/stock_news",
+            {"tickers": symbol, "from": from_text, "to": to_text, "limit": NEWS_LIMIT_PER_SYMBOL, "apikey": api_key},
+            "news",
+        ),
+        (
+            f"https://financialmodelingprep.com/api/v3/press-releases/{symbol}",
+            {"limit": NEWS_LIMIT_PER_SYMBOL, "apikey": api_key},
+            "press_release",
+        ),
+    ]
+    for url, params, source_type in endpoints:
+        if fetch_state.get("count", 0) >= MAX_NEWS_FETCH:
+            break
+        try:
+            response = requests.get(url, params=params, timeout=20)
+            response.raise_for_status()
+            fetch_state["count"] = fetch_state.get("count", 0) + 1
+            payload = response.json()
+            if not isinstance(payload, list):
+                continue
+            for raw in payload:
+                if not isinstance(raw, dict):
+                    continue
+                event = _normalize_news_item(raw, source_type)
+                event_date = _news_item_date(event)
+                if event_date is None or event_date < from_date.normalize() or event_date > to_date.normalize():
+                    continue
+                if event["symbol"] and event["symbol"] != symbol:
+                    continue
+                if event["title"]:
+                    items.append(event)
+        except Exception as exc:
+            logger.warning("FMP news fetch failed for %s via %s: %s", symbol, source_type, exc)
+
+    # Deduplicate by title/date/source while preserving recency order.
+    seen: set[tuple[str, str, str]] = set()
+    deduped: list[dict[str, str]] = []
+    for item in sorted(items, key=lambda x: _news_item_date(x) or pd.Timestamp.min, reverse=True):
+        key = (item.get("date", "")[:10], item.get("title", "").lower(), item.get("source_type", ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    cache[cache_key] = {"fetched_at": datetime.now().isoformat(), "items": deduped}
+    return deduped
+
+
+def _join_titles(events: list[dict[str, str]], limit: int = 5) -> str:
+    return " | ".join(event["title"] for event in events[:limit] if event.get("title"))
+
+
+def _extract_amount(text: str, keyword: str = "") -> str:
+    pattern = r"\$([0-9]+(?:\.[0-9]+)?)\s*(million|billion)"
+    match = None
+    if keyword:
+        for candidate in re.finditer(pattern, text, flags=re.IGNORECASE):
+            start = max(0, candidate.start() - 100)
+            end = min(len(text), candidate.end() + 120)
+            if keyword.lower() in text[start:end].lower():
+                match = candidate
+                break
+        if match is None:
+            return ""
+    if match is None:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+    if not match:
+        return ""
+    unit = "億ドル" if match.group(2).lower() == "billion" else "百万ドル"
+    return f"{match.group(1)}{unit}"
+
+
+def _classify_news(events: list[dict[str, str]], signal_date: pd.Timestamp, asof_ts: pd.Timestamp) -> dict[str, Any]:
+    recent_start = asof_ts.normalize() - pd.Timedelta(days=NEWS_RECENT_DAYS)
+    pre_start = signal_date.normalize() - pd.Timedelta(days=NEWS_PRE_SIGNAL_DAYS)
+    pre_events: list[dict[str, str]] = []
+    post_events: list[dict[str, str]] = []
+    recent_events: list[dict[str, str]] = []
+    for event in events:
+        event_date = _news_item_date(event)
+        if event_date is None:
+            continue
+        event_date = event_date.normalize()
+        if pre_start <= event_date < signal_date.normalize():
+            pre_events.append(event)
+        if signal_date.normalize() <= event_date <= asof_ts.normalize():
+            post_events.append(event)
+        if recent_start <= event_date <= asof_ts.normalize():
+            recent_events.append(event)
+
+    text = " | ".join(f"{event.get('title', '')} {event.get('text', '')}" for event in post_events + recent_events).lower()
+    backlog = "backlog" in text or "受注残" in text
+    contract = any(term in text for term in ("contract", "award", "task order", "agreement", "契約"))
+    order = any(term in text for term in ("order", "orders", "booking", "bookings", "book-to-bill", "受注"))
+    institution = any(term in text for term in ("fund disclosed", "institutional", "13f", "stake", "shares worth", "大量保有"))
+    warning = any(term in text for term in ("red flag", "class action", "lawsuit", "investigation", "overvalued"))
+
+    evidence: list[str] = []
+    if backlog:
+        amount = _extract_amount(text, "backlog")
+        evidence.append(f"受注残{amount}" if amount else "受注残")
+    if contract:
+        amount = _extract_amount(text, "contract") or _extract_amount(text, "agreement") or _extract_amount(text)
+        evidence.append(f"契約{amount}" if amount else "契約・受注")
+    if order:
+        evidence.append("受注/ブッキング")
+    if institution:
+        evidence.append("機関投資家買い")
+    if warning:
+        evidence.append("警戒見出し")
+
+    return {
+        "pre_events": pre_events,
+        "post_events": post_events,
+        "recent_events": recent_events,
+        "news_evidence_ja": "ニュース・開示: " + "、".join(dict.fromkeys(evidence)) if evidence else "",
+        "backlog_signal": backlog,
+        "contract_signal": contract,
+        "order_signal": order,
+        "institutional_signal": institution,
+        "warning_signal": warning,
     }
 
 
@@ -707,6 +906,8 @@ def build_recognition_gap_ranking(
     profiles = _fetch_missing_profiles(symbols, _load_profile_cache())
     fundamental_cache = _load_fundamental_cache()
     fundamental_fetch_state = {"count": 0}
+    news_cache = _load_news_cache()
+    news_fetch_state = {"count": 0}
     rows: list[RecognitionGapRow] = []
 
     for symbol in symbols:
@@ -784,6 +985,15 @@ def build_recognition_gap_ranking(
         eps_qoq = _safe_float(fundamentals.get("eps_qoq"), math.nan)
         eps_yoy_prev = _safe_float(fundamentals.get("eps_yoy_prev"), math.nan)
         eps_qoq_prev = _safe_float(fundamentals.get("eps_qoq_prev"), math.nan)
+        asof_ts = pd.Timestamp(data.index[-1])
+        news_from = signal_date - pd.Timedelta(days=NEWS_PRE_SIGNAL_DAYS)
+        news_items = _load_symbol_news(symbol, news_cache, news_fetch_state, news_from, asof_ts)
+        news_context = _classify_news(news_items, signal_date, asof_ts)
+        news_evidence = _clean_text(news_context.get("news_evidence_ja"))
+        post_news_titles = _join_titles(news_context.get("post_events", []), limit=6)
+        recent_news_titles = _join_titles(news_context.get("recent_events", []), limit=4)
+        pre_news_titles = _join_titles(news_context.get("pre_events", []), limit=4)
+        news_text_for_summary = " | ".join(text for text in (news_evidence, post_news_titles, recent_news_titles) if text)
 
         data_integrity = "clean" if company and (industry or sector) else "needs_entity_check"
         price_state = _classify_price(close)
@@ -836,6 +1046,15 @@ def build_recognition_gap_ranking(
                 eps_qoq=round(eps_qoq, 6) if np.isfinite(eps_qoq) else None,
                 eps_yoy_prev=round(eps_yoy_prev, 6) if np.isfinite(eps_yoy_prev) else None,
                 eps_qoq_prev=round(eps_qoq_prev, 6) if np.isfinite(eps_qoq_prev) else None,
+                news_pre_60d_titles=pre_news_titles,
+                news_ep_to_asof_titles=post_news_titles,
+                news_recent_titles=recent_news_titles,
+                news_evidence_ja=news_evidence,
+                backlog_signal=bool(news_context.get("backlog_signal")),
+                contract_signal=bool(news_context.get("contract_signal")),
+                order_signal=bool(news_context.get("order_signal")),
+                institutional_signal=bool(news_context.get("institutional_signal")),
+                warning_signal=bool(news_context.get("warning_signal")),
                 data_integrity=data_integrity,
                 price_trend=price_state,
                 volume_demand_durability=volume_state,
@@ -875,7 +1094,7 @@ def build_recognition_gap_ranking(
                     eps_qoq_prev if np.isfinite(eps_qoq_prev) else None,
                     market_cap_value,
                     avg_dv20,
-                    "",
+                    news_text_for_summary,
                     adr_or_non_us,
                 ),
                 recommendation_priority=priority,
@@ -908,6 +1127,8 @@ def build_recognition_gap_ranking(
         row.rank = idx
     if fundamental_fetch_state.get("count", 0):
         _save_fundamental_cache(fundamental_cache)
+    if news_fetch_state.get("count", 0):
+        _save_news_cache(news_cache)
 
     asof = data.index[-1].strftime("%Y-%m-%d")
     result = {

@@ -236,6 +236,8 @@ def news_signal_phrase(news_text: str = "") -> str:
     lower = text.lower()
     if not lower:
         return ""
+    if "ニュース・開示:" in text:
+        return text.split("|", 1)[0].strip(" 。")
     signals = []
     contract_amount = re.search(r"\$([0-9]+(?:\.[0-9]+)?)\s*(million|billion)[^|.]{0,80}contract", lower)
     if contract_amount:

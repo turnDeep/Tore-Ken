@@ -110,7 +110,7 @@ def priority_value(row: pd.Series) -> float:
     volume = get_first(row, ["volume_demand_durability", "volume_state"])
     industry = get_first(row, ["industry", "Industry"]).lower()
     sector = get_first(row, ["sector", "Sector"]).lower()
-    news = get_first(row, ["news_titles", "recent_news", "news"])
+    news = get_first(row, ["news_evidence_ja", "news_ep_to_asof_titles", "news_recent_titles", "news_titles", "recent_news", "news"])
     supply = get_first(row, ["supply_risk_severity"])
     if infer_supply_severity is not None:
         supply = infer_supply_severity(
@@ -301,7 +301,7 @@ def normalize_rows(
                 eps_qoq_prev=get_first(row, ["prev_eps_qoq_fmp", "eps_qoq_prev", "previous_eps_qoq"]),
                 market_cap=get_first(row, ["market_cap", "mktCap", "MarketCap"]),
                 avg_dollar_volume20=get_first(row, ["avg_dollar_volume20"]),
-                news_text=get_first(row, ["news_titles", "recent_news", "news"]),
+                news_text=get_first(row, ["news_evidence_ja", "news_ep_to_asof_titles", "news_recent_titles", "news_titles", "recent_news", "news"]),
                 adr_or_non_us=str(get_first(row, ["adr_or_non_us"])).lower() in {"true", "1", "yes"},
             )
         elif not summary:
