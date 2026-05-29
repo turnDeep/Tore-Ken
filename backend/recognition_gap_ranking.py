@@ -32,6 +32,7 @@ PRICE_DATA_PATH = DATA_DIR / "price_data_ohlcv.pkl"
 PROFILE_CACHE_PATH = DATA_DIR / "recognition_gap_profiles.json"
 FUNDAMENTAL_CACHE_PATH = DATA_DIR / "recognition_gap_fundamentals.json"
 NEWS_CACHE_PATH = DATA_DIR / "recognition_gap_news.json"
+ESTIMATE_CACHE_PATH = DATA_DIR / "recognition_gap_estimates.json"
 RANKING_JSON_PATH = DATA_DIR / "recognition_gap_ranking.json"
 RANKING_CSV_PATH = DATA_DIR / "recognition_gap_ranking.csv"
 
@@ -52,6 +53,7 @@ MIN_DOLLAR_VOLUME20 = float(os.getenv("RECOGNITION_GAP_MIN_DOLLAR_VOLUME20", "10
 MAX_PROFILE_FETCH = int(os.getenv("RECOGNITION_GAP_PROFILE_FETCH_LIMIT", "350"))
 MAX_FUNDAMENTAL_FETCH = int(os.getenv("RECOGNITION_GAP_FUNDAMENTAL_FETCH_LIMIT", "150"))
 MAX_NEWS_FETCH = int(os.getenv("RECOGNITION_GAP_NEWS_FETCH_LIMIT", "150"))
+MAX_ESTIMATE_FETCH = int(os.getenv("RECOGNITION_GAP_ESTIMATE_FETCH_LIMIT", "150"))
 NEWS_PRE_SIGNAL_DAYS = int(os.getenv("RECOGNITION_GAP_NEWS_PRE_SIGNAL_DAYS", "60"))
 NEWS_RECENT_DAYS = int(os.getenv("RECOGNITION_GAP_NEWS_RECENT_DAYS", "14"))
 NEWS_LIMIT_PER_SYMBOL = int(os.getenv("RECOGNITION_GAP_NEWS_LIMIT_PER_SYMBOL", "100"))
@@ -129,6 +131,8 @@ class RecognitionGapRow:
     revenue_yoy: float | None
     revenue_qoq: float | None
     revenue_yoy_prev: float | None
+    ttm_revenue: float | None
+    ttm_eps: float | None
     latest_eps: float | None
     eps_yoy: float | None
     eps_qoq: float | None
@@ -143,6 +147,21 @@ class RecognitionGapRow:
     order_signal: bool
     institutional_signal: bool
     warning_signal: bool
+    guidance_signal: bool
+    guidance_positive_signal: bool
+    next_quarter_revenue_est: float | None
+    next_quarter_eps_est: float | None
+    current_year_revenue_est: float | None
+    current_year_eps_est: float | None
+    next_year_revenue_est: float | None
+    next_year_eps_est: float | None
+    next_quarter_revenue_growth_est: float | None
+    next_quarter_eps_growth_est: float | None
+    current_year_revenue_growth_est: float | None
+    current_year_eps_growth_est: float | None
+    next_year_revenue_growth_est: float | None
+    next_year_eps_growth_est: float | None
+    estimate_snapshot_date: str
     data_integrity: str
     price_trend: str
     volume_demand_durability: str
@@ -291,6 +310,22 @@ def _save_news_cache(cache: dict[str, dict[str, Any]]) -> None:
     NEWS_CACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _load_estimate_cache() -> dict[str, dict[str, Any]]:
+    if not ESTIMATE_CACHE_PATH.exists():
+        return {}
+    try:
+        cached = json.loads(ESTIMATE_CACHE_PATH.read_text(encoding="utf-8"))
+        return {key.upper(): value for key, value in cached.items() if isinstance(value, dict)}
+    except Exception as exc:
+        logger.warning("failed to read estimate cache: %s", exc)
+        return {}
+
+
+def _save_estimate_cache(cache: dict[str, dict[str, Any]]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    ESTIMATE_CACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _parse_date(value: Any) -> pd.Timestamp | None:
     text = _clean_text(value)
     if not text:
@@ -338,11 +373,17 @@ def _compute_fundamentals(items: list[dict[str, Any]], asof_ts: pd.Timestamp | N
     prev_prev_eps = _safe_float(prev_prev_q.get("eps") or prev_prev_q.get("epsdiluted"), math.nan)
     year_ago_eps = _safe_float(year_ago.get("eps") or year_ago.get("epsdiluted"), math.nan)
     prev_year_ago_eps = _safe_float(prev_year_ago.get("eps") or prev_year_ago.get("epsdiluted"), math.nan)
+    ttm_revenue = sum(_safe_float(item.get("revenue"), math.nan) for item in usable[:4])
+    ttm_eps_values = [_safe_float(item.get("eps") or item.get("epsdiluted"), math.nan) for item in usable[:4]]
+    ttm_eps = sum(ttm_eps_values) if all(np.isfinite(value) for value in ttm_eps_values) else math.nan
 
     return {
+        "latest_revenue": _safe_float(latest.get("revenue"), math.nan),
         "revenue_yoy": _growth(latest.get("revenue"), year_ago.get("revenue")),
         "revenue_qoq": _growth(latest.get("revenue"), prev_q.get("revenue")),
         "revenue_yoy_prev": _growth(prev_q.get("revenue"), prev_year_ago.get("revenue")),
+        "ttm_revenue": ttm_revenue if np.isfinite(ttm_revenue) and ttm_revenue > 0 else None,
+        "ttm_eps": ttm_eps if np.isfinite(ttm_eps) else None,
         "latest_eps": latest_eps if np.isfinite(latest_eps) else None,
         "eps_yoy": _growth(latest_eps, year_ago_eps),
         "eps_qoq": _growth(latest_eps, prev_eps),
@@ -491,6 +532,22 @@ def _classify_news(events: list[dict[str, str]], signal_date: pd.Timestamp, asof
     order = any(term in text for term in ("order", "orders", "booking", "bookings", "book-to-bill", "受注"))
     institution = any(term in text for term in ("fund disclosed", "institutional", "13f", "stake", "shares worth", "大量保有"))
     warning = any(term in text for term in ("red flag", "class action", "lawsuit", "investigation", "overvalued"))
+    guidance = any(term in text for term in ("guidance", "outlook", "forecast", "expects", "full-year", "next quarter", "見通し", "予想"))
+    guidance_positive = any(
+        term in text
+        for term in (
+            "raises guidance",
+            "raised guidance",
+            "increase guidance",
+            "increased guidance",
+            "above consensus",
+            "boosts outlook",
+            "raises outlook",
+            "strong outlook",
+            "upbeat outlook",
+            "上方修正",
+        )
+    )
 
     evidence: list[str] = []
     if backlog:
@@ -505,6 +562,10 @@ def _classify_news(events: list[dict[str, str]], signal_date: pd.Timestamp, asof
         evidence.append("機関投資家買い")
     if warning:
         evidence.append("警戒見出し")
+    if guidance_positive:
+        evidence.append("会社見通し上振れ")
+    elif guidance:
+        evidence.append("会社見通し")
 
     return {
         "pre_events": pre_events,
@@ -516,6 +577,8 @@ def _classify_news(events: list[dict[str, str]], signal_date: pd.Timestamp, asof
         "order_signal": order,
         "institutional_signal": institution,
         "warning_signal": warning,
+        "guidance_signal": guidance,
+        "guidance_positive_signal": guidance_positive,
     }
 
 
@@ -557,6 +620,133 @@ def _fetch_fundamentals(
     except Exception as exc:
         logger.warning("FMP fundamental fetch failed for %s: %s", symbol, exc)
         return {}
+
+
+def _growth_from_estimate(estimate: Any, base: Any) -> float:
+    est = _safe_float(estimate, math.nan)
+    base_value = _safe_float(base, math.nan)
+    if not np.isfinite(est) or not np.isfinite(base_value) or base_value <= 0:
+        return math.nan
+    return est / base_value - 1
+
+
+def _eps_growth_from_estimate(estimate: Any, base: Any) -> float:
+    est = _safe_float(estimate, math.nan)
+    base_value = _safe_float(base, math.nan)
+    if not np.isfinite(est) or not np.isfinite(base_value) or base_value <= 0:
+        return math.nan
+    return est / base_value - 1
+
+
+def _select_estimate(items: list[dict[str, Any]], asof_ts: pd.Timestamp | None, *, year_offset: int | None = None) -> dict[str, Any]:
+    if not items:
+        return {}
+    asof_norm = (asof_ts or pd.Timestamp.today()).normalize()
+    future = []
+    for item in items:
+        item_date = _parse_date(item.get("date"))
+        if item_date is None:
+            continue
+        if item_date >= asof_norm:
+            future.append((item_date, item))
+    future.sort(key=lambda pair: pair[0])
+    if year_offset is None:
+        return future[0][1] if future else {}
+    target_year = asof_norm.year + year_offset
+    for item_date, item in future:
+        if item_date.year == target_year:
+            return item
+    return future[0][1] if future else {}
+
+
+def _compute_estimates(raw: dict[str, Any], fundamentals: dict[str, Any], asof_ts: pd.Timestamp | None = None) -> dict[str, Any]:
+    fetched_at = _parse_date(raw.get("fetched_at"))
+    if asof_ts is not None and fetched_at is not None:
+        # Analyst estimates are point-in-time evidence. A cache fetched long after
+        # a historical as-of date would leak future consensus revisions.
+        if fetched_at.normalize() > asof_ts.normalize() + pd.Timedelta(days=3):
+            return {}
+    elif asof_ts is not None and fetched_at is None:
+        return {}
+
+    quarter_items = raw.get("quarterly") if isinstance(raw.get("quarterly"), list) else []
+    annual_items = raw.get("annual") if isinstance(raw.get("annual"), list) else []
+    next_quarter = _select_estimate(quarter_items, asof_ts)
+    current_year = _select_estimate(annual_items, asof_ts, year_offset=0)
+    next_year = _select_estimate(annual_items, asof_ts, year_offset=1)
+
+    latest_revenue = _safe_float(fundamentals.get("latest_revenue"), math.nan)
+    ttm_revenue = _safe_float(fundamentals.get("ttm_revenue"), math.nan)
+    ttm_eps = _safe_float(fundamentals.get("ttm_eps"), math.nan)
+    latest_eps = _safe_float(fundamentals.get("latest_eps"), math.nan)
+
+    next_quarter_revenue = _safe_float(next_quarter.get("estimatedRevenueAvg"), math.nan)
+    next_quarter_eps = _safe_float(next_quarter.get("estimatedEpsAvg"), math.nan)
+    current_year_revenue = _safe_float(current_year.get("estimatedRevenueAvg"), math.nan)
+    current_year_eps = _safe_float(current_year.get("estimatedEpsAvg"), math.nan)
+    next_year_revenue = _safe_float(next_year.get("estimatedRevenueAvg"), math.nan)
+    next_year_eps = _safe_float(next_year.get("estimatedEpsAvg"), math.nan)
+
+    return {
+        "next_quarter_revenue_est": next_quarter_revenue if np.isfinite(next_quarter_revenue) else None,
+        "next_quarter_eps_est": next_quarter_eps if np.isfinite(next_quarter_eps) else None,
+        "current_year_revenue_est": current_year_revenue if np.isfinite(current_year_revenue) else None,
+        "current_year_eps_est": current_year_eps if np.isfinite(current_year_eps) else None,
+        "next_year_revenue_est": next_year_revenue if np.isfinite(next_year_revenue) else None,
+        "next_year_eps_est": next_year_eps if np.isfinite(next_year_eps) else None,
+        "next_quarter_revenue_growth_est": _growth_from_estimate(next_quarter_revenue, latest_revenue),
+        "next_quarter_eps_growth_est": _eps_growth_from_estimate(next_quarter_eps, latest_eps),
+        "current_year_revenue_growth_est": _growth_from_estimate(current_year_revenue, ttm_revenue),
+        "current_year_eps_growth_est": _eps_growth_from_estimate(current_year_eps, ttm_eps),
+        "next_year_revenue_growth_est": _growth_from_estimate(next_year_revenue, current_year_revenue),
+        "next_year_eps_growth_est": _eps_growth_from_estimate(next_year_eps, current_year_eps),
+        "estimate_snapshot_date": _clean_text(raw.get("fetched_at")),
+    }
+
+
+def _fetch_estimates(
+    symbol: str,
+    cache: dict[str, dict[str, Any]],
+    fetch_state: dict[str, int],
+    fundamentals: dict[str, Any],
+    asof_ts: pd.Timestamp | None = None,
+) -> dict[str, Any]:
+    symbol = symbol.upper()
+    cached = cache.get(symbol)
+    if cached and isinstance(cached.get("quarterly"), list) and isinstance(cached.get("annual"), list):
+        return _compute_estimates(cached, fundamentals, asof_ts)
+
+    api_key = os.getenv("FMP_API_KEY", "").strip()
+    if not api_key or api_key.lower().startswith("your_"):
+        return {}
+    if fetch_state.get("count", 0) >= MAX_ESTIMATE_FETCH:
+        return {}
+
+    try:
+        import requests
+    except Exception:
+        logger.warning("requests is not installed; skipping FMP estimate enrichment")
+        return {}
+
+    raw: dict[str, Any] = {"fetched_at": datetime.now().isoformat(), "quarterly": [], "annual": []}
+    for period, key in (("quarter", "quarterly"), ("annual", "annual")):
+        if fetch_state.get("count", 0) >= MAX_ESTIMATE_FETCH:
+            break
+        try:
+            response = requests.get(
+                f"https://financialmodelingprep.com/api/v3/analyst-estimates/{symbol}",
+                params={"period": period, "limit": 12 if period == "quarter" else 8, "apikey": api_key},
+                timeout=20,
+            )
+            response.raise_for_status()
+            fetch_state["count"] = fetch_state.get("count", 0) + 1
+            payload = response.json()
+            if isinstance(payload, list):
+                raw[key] = payload
+        except Exception as exc:
+            logger.warning("FMP estimate fetch failed for %s period=%s: %s", symbol, period, exc)
+    cache[symbol] = raw
+    return _compute_estimates(raw, fundamentals, asof_ts)
 
 
 def _fetch_missing_profiles(symbols: list[str], profiles: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -844,6 +1034,13 @@ def _summary(
     eps_qoq: float | None,
     eps_yoy_prev: float | None,
     eps_qoq_prev: float | None,
+    next_quarter_revenue_growth_est: float | None,
+    next_quarter_eps_growth_est: float | None,
+    current_year_revenue_growth_est: float | None,
+    current_year_eps_growth_est: float | None,
+    next_year_revenue_growth_est: float | None,
+    next_year_eps_growth_est: float | None,
+    estimate_snapshot_date: str,
     market_cap: float | None,
     avg_dollar_volume20: float,
     news_text: str,
@@ -875,6 +1072,13 @@ def _summary(
         eps_qoq=eps_qoq,
         eps_yoy_prev=eps_yoy_prev,
         eps_qoq_prev=eps_qoq_prev,
+        next_quarter_revenue_growth_est=next_quarter_revenue_growth_est,
+        next_quarter_eps_growth_est=next_quarter_eps_growth_est,
+        current_year_revenue_growth_est=current_year_revenue_growth_est,
+        current_year_eps_growth_est=current_year_eps_growth_est,
+        next_year_revenue_growth_est=next_year_revenue_growth_est,
+        next_year_eps_growth_est=next_year_eps_growth_est,
+        estimate_snapshot_date=estimate_snapshot_date,
         market_cap=market_cap,
         avg_dollar_volume20=avg_dollar_volume20,
         news_text=news_text,
@@ -908,6 +1112,8 @@ def build_recognition_gap_ranking(
     fundamental_fetch_state = {"count": 0}
     news_cache = _load_news_cache()
     news_fetch_state = {"count": 0}
+    estimate_cache = _load_estimate_cache()
+    estimate_fetch_state = {"count": 0}
     rows: list[RecognitionGapRow] = []
 
     for symbol in symbols:
@@ -985,7 +1191,23 @@ def build_recognition_gap_ranking(
         eps_qoq = _safe_float(fundamentals.get("eps_qoq"), math.nan)
         eps_yoy_prev = _safe_float(fundamentals.get("eps_yoy_prev"), math.nan)
         eps_qoq_prev = _safe_float(fundamentals.get("eps_qoq_prev"), math.nan)
+        ttm_revenue = _safe_float(fundamentals.get("ttm_revenue"), math.nan)
+        ttm_eps = _safe_float(fundamentals.get("ttm_eps"), math.nan)
         asof_ts = pd.Timestamp(data.index[-1])
+        estimates = _fetch_estimates(symbol, estimate_cache, estimate_fetch_state, fundamentals, asof_ts)
+        next_quarter_revenue_est = _safe_float(estimates.get("next_quarter_revenue_est"), math.nan)
+        next_quarter_eps_est = _safe_float(estimates.get("next_quarter_eps_est"), math.nan)
+        current_year_revenue_est = _safe_float(estimates.get("current_year_revenue_est"), math.nan)
+        current_year_eps_est = _safe_float(estimates.get("current_year_eps_est"), math.nan)
+        next_year_revenue_est = _safe_float(estimates.get("next_year_revenue_est"), math.nan)
+        next_year_eps_est = _safe_float(estimates.get("next_year_eps_est"), math.nan)
+        next_quarter_revenue_growth_est = _safe_float(estimates.get("next_quarter_revenue_growth_est"), math.nan)
+        next_quarter_eps_growth_est = _safe_float(estimates.get("next_quarter_eps_growth_est"), math.nan)
+        current_year_revenue_growth_est = _safe_float(estimates.get("current_year_revenue_growth_est"), math.nan)
+        current_year_eps_growth_est = _safe_float(estimates.get("current_year_eps_growth_est"), math.nan)
+        next_year_revenue_growth_est = _safe_float(estimates.get("next_year_revenue_growth_est"), math.nan)
+        next_year_eps_growth_est = _safe_float(estimates.get("next_year_eps_growth_est"), math.nan)
+        estimate_snapshot_date = _clean_text(estimates.get("estimate_snapshot_date"))
         news_from = signal_date - pd.Timedelta(days=NEWS_PRE_SIGNAL_DAYS)
         news_items = _load_symbol_news(symbol, news_cache, news_fetch_state, news_from, asof_ts)
         news_context = _classify_news(news_items, signal_date, asof_ts)
@@ -1011,6 +1233,10 @@ def build_recognition_gap_ranking(
             flags.append(f"supply_risk_{supply_severity}")
         if data_integrity != "clean":
             flags.append("entity_check")
+        if news_context.get("guidance_positive_signal"):
+            flags.append("positive_guidance")
+        elif news_context.get("guidance_signal"):
+            flags.append("guidance_watch")
 
         priority = _priority_points(
             price_state,
@@ -1041,6 +1267,8 @@ def build_recognition_gap_ranking(
                 revenue_yoy=round(revenue_yoy, 6) if np.isfinite(revenue_yoy) else None,
                 revenue_qoq=round(revenue_qoq, 6) if np.isfinite(revenue_qoq) else None,
                 revenue_yoy_prev=round(revenue_yoy_prev, 6) if np.isfinite(revenue_yoy_prev) else None,
+                ttm_revenue=round(ttm_revenue, 2) if np.isfinite(ttm_revenue) else None,
+                ttm_eps=round(ttm_eps, 6) if np.isfinite(ttm_eps) else None,
                 latest_eps=round(latest_eps, 6) if np.isfinite(latest_eps) else None,
                 eps_yoy=round(eps_yoy, 6) if np.isfinite(eps_yoy) else None,
                 eps_qoq=round(eps_qoq, 6) if np.isfinite(eps_qoq) else None,
@@ -1055,6 +1283,21 @@ def build_recognition_gap_ranking(
                 order_signal=bool(news_context.get("order_signal")),
                 institutional_signal=bool(news_context.get("institutional_signal")),
                 warning_signal=bool(news_context.get("warning_signal")),
+                guidance_signal=bool(news_context.get("guidance_signal")),
+                guidance_positive_signal=bool(news_context.get("guidance_positive_signal")),
+                next_quarter_revenue_est=round(next_quarter_revenue_est, 2) if np.isfinite(next_quarter_revenue_est) else None,
+                next_quarter_eps_est=round(next_quarter_eps_est, 6) if np.isfinite(next_quarter_eps_est) else None,
+                current_year_revenue_est=round(current_year_revenue_est, 2) if np.isfinite(current_year_revenue_est) else None,
+                current_year_eps_est=round(current_year_eps_est, 6) if np.isfinite(current_year_eps_est) else None,
+                next_year_revenue_est=round(next_year_revenue_est, 2) if np.isfinite(next_year_revenue_est) else None,
+                next_year_eps_est=round(next_year_eps_est, 6) if np.isfinite(next_year_eps_est) else None,
+                next_quarter_revenue_growth_est=round(next_quarter_revenue_growth_est, 6) if np.isfinite(next_quarter_revenue_growth_est) else None,
+                next_quarter_eps_growth_est=round(next_quarter_eps_growth_est, 6) if np.isfinite(next_quarter_eps_growth_est) else None,
+                current_year_revenue_growth_est=round(current_year_revenue_growth_est, 6) if np.isfinite(current_year_revenue_growth_est) else None,
+                current_year_eps_growth_est=round(current_year_eps_growth_est, 6) if np.isfinite(current_year_eps_growth_est) else None,
+                next_year_revenue_growth_est=round(next_year_revenue_growth_est, 6) if np.isfinite(next_year_revenue_growth_est) else None,
+                next_year_eps_growth_est=round(next_year_eps_growth_est, 6) if np.isfinite(next_year_eps_growth_est) else None,
+                estimate_snapshot_date=estimate_snapshot_date,
                 data_integrity=data_integrity,
                 price_trend=price_state,
                 volume_demand_durability=volume_state,
@@ -1092,6 +1335,13 @@ def build_recognition_gap_ranking(
                     eps_qoq if np.isfinite(eps_qoq) else None,
                     eps_yoy_prev if np.isfinite(eps_yoy_prev) else None,
                     eps_qoq_prev if np.isfinite(eps_qoq_prev) else None,
+                    next_quarter_revenue_growth_est if np.isfinite(next_quarter_revenue_growth_est) else None,
+                    next_quarter_eps_growth_est if np.isfinite(next_quarter_eps_growth_est) else None,
+                    current_year_revenue_growth_est if np.isfinite(current_year_revenue_growth_est) else None,
+                    current_year_eps_growth_est if np.isfinite(current_year_eps_growth_est) else None,
+                    next_year_revenue_growth_est if np.isfinite(next_year_revenue_growth_est) else None,
+                    next_year_eps_growth_est if np.isfinite(next_year_eps_growth_est) else None,
+                    estimate_snapshot_date,
                     market_cap_value,
                     avg_dv20,
                     news_text_for_summary,
@@ -1129,6 +1379,8 @@ def build_recognition_gap_ranking(
         _save_fundamental_cache(fundamental_cache)
     if news_fetch_state.get("count", 0):
         _save_news_cache(news_cache)
+    if estimate_fetch_state.get("count", 0):
+        _save_estimate_cache(estimate_cache)
 
     asof = data.index[-1].strftime("%Y-%m-%d")
     result = {

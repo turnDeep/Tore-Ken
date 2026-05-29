@@ -172,6 +172,16 @@ def priority_value(row: pd.Series) -> float:
     if eps == eps:
         value += 1 if eps > 0 else -1
 
+    next_year_rev = nfloat(get_first(row, ["next_year_revenue_growth_est"]))
+    next_year_eps = nfloat(get_first(row, ["next_year_eps_growth_est"]))
+    next_q_rev = nfloat(get_first(row, ["next_quarter_revenue_growth_est"]))
+    for metric in (next_year_rev, next_q_rev):
+        if metric == metric:
+            value += 3 if metric >= 0.20 else 1 if metric >= 0.08 else 0
+    for metric in (next_year_eps,):
+        if metric == metric:
+            value += 3 if metric >= 0.25 else 1 if metric >= 0.10 else 0
+
     ret60_resid_spy = nfloat(get_first(row, ["ret60_resid_spy"]))
     if ret60_resid_spy == ret60_resid_spy:
         value += 4 if ret60_resid_spy >= 0.25 else 2 if ret60_resid_spy > 0 else -2
@@ -299,6 +309,13 @@ def normalize_rows(
                 eps_qoq=get_first(row, ["eps_qoq_fmp", "eps_qoq", "earnings_qoq"]),
                 eps_yoy_prev=get_first(row, ["prev_eps_yoy_fmp", "eps_yoy_prev", "previous_eps_yoy"]),
                 eps_qoq_prev=get_first(row, ["prev_eps_qoq_fmp", "eps_qoq_prev", "previous_eps_qoq"]),
+                next_quarter_revenue_growth_est=get_first(row, ["next_quarter_revenue_growth_est"]),
+                next_quarter_eps_growth_est=get_first(row, ["next_quarter_eps_growth_est"]),
+                current_year_revenue_growth_est=get_first(row, ["current_year_revenue_growth_est"]),
+                current_year_eps_growth_est=get_first(row, ["current_year_eps_growth_est"]),
+                next_year_revenue_growth_est=get_first(row, ["next_year_revenue_growth_est"]),
+                next_year_eps_growth_est=get_first(row, ["next_year_eps_growth_est"]),
+                estimate_snapshot_date=get_first(row, ["estimate_snapshot_date"]),
                 market_cap=get_first(row, ["market_cap", "mktCap", "MarketCap"]),
                 avg_dollar_volume20=get_first(row, ["avg_dollar_volume20"]),
                 news_text=get_first(row, ["news_evidence_ja", "news_ep_to_asof_titles", "news_recent_titles", "news_titles", "recent_news", "news"]),
@@ -411,6 +428,19 @@ def build_post_text(
     return tickers
 
 
+def save_display_csv(rows: list[dict[str, str]], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).rename(
+        columns={
+            "rank": "順位",
+            "symbol": "銘柄",
+            "entry": "入口日",
+            "return": "含み益",
+            "summary": "要点",
+        }
+    ).to_csv(output_path, index=False, encoding="utf-8-sig")
+
+
 def env_first(*names: str) -> str:
     for name in names:
         value = os.getenv(name, "").strip()
@@ -466,6 +496,7 @@ def publish(
     rewrite_summary: bool = False,
     sort_by: str = "priority",
     out_dir: Path | None = None,
+    out_csv: Path | None = None,
 ) -> dict[str, Any]:
     rows = normalize_rows(ranking_csv, top_n=top_n, rewrite_summary=rewrite_summary, sort_by=sort_by)
     if asof_label is None:
@@ -473,6 +504,8 @@ def publish(
     out_dir = out_dir or DEFAULT_OUT_ROOT / asof_label.replace("-", "")
     image_paths = render_images(rows, out_dir, asof_label)
     text = build_post_text(rows, asof_label, include_title=include_title, max_symbols=post_text_limit)
+    if out_csv is not None:
+        save_display_csv(rows, out_csv)
 
     result: dict[str, Any] = {
         "asof_label": asof_label,
@@ -480,6 +513,8 @@ def publish(
         "images": [str(path) for path in image_paths],
         "posted": False,
     }
+    if out_csv is not None:
+        result["csv"] = str(out_csv)
     if post_x:
         result["x_response"] = post_to_x(text, image_paths)
         result["posted"] = True
@@ -498,6 +533,7 @@ def main() -> None:
     parser.add_argument("--rewrite-summary", action="store_true", help="Regenerate image summaries from structured 7-layer fields.")
     parser.add_argument("--sort-by", default="priority", choices=["priority", "rank", "input"], help="priority uses 7-layer hold priority; rank preserves CSV rank.")
     parser.add_argument("--out-dir", type=Path, default=None)
+    parser.add_argument("--out-csv", type=Path, default=None, help="Write the rendered ranking order and summaries to a UTF-8 CSV.")
     args = parser.parse_args()
 
     result = publish(
@@ -510,6 +546,7 @@ def main() -> None:
         rewrite_summary=args.rewrite_summary,
         sort_by=args.sort_by,
         out_dir=args.out_dir,
+        out_csv=args.out_csv,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

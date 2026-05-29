@@ -166,8 +166,53 @@ def trim_summary(text: str, max_chars: int = 300) -> str:
     return text[: max_chars - 1].rstrip("、。,. ") + "…"
 
 
-def theme_phrase(industry: str = "", sector: str = "") -> str:
-    text = f"{industry} {sector}".lower()
+def theme_phrase(industry: str = "", sector: str = "", symbol: str = "", company: str = "") -> str:
+    text = f"{industry} {sector} {symbol} {company}".lower()
+    ticker = clean_text(symbol).upper()
+    if ticker in {"STX", "WDC"} or any(term in text for term in ("seagate", "western digital")):
+        return "HDD/ストレージ。AIデータ保管需要とメモリ/ストレージ再評価に連動する銘柄"
+    if ticker == "LITE" or "lumentum" in text:
+        return "光通信部品/フォトニクス。AIデータセンター向け光接続需要の中心寄り"
+    if ticker == "LWLG" or "lightwave" in text:
+        return "光変調器/フォトニクス材料。商用化ニュースで評価が変わりやすい小型材料株"
+    if ticker in {"VSAT", "IRDM", "SATS", "SATL"} or any(term in text for term in ("viasat", "iridium", "echostar", "satellogic")):
+        return "衛星通信/地球観測。宇宙・通信インフラ更新の需要確認が焦点"
+    if ticker == "TTMI" or "ttm technologies" in text:
+        return "PCB/高密度基板。AIサーバー、防衛、通信インフラ向け需要に連動"
+    if ticker in {"FORM", "KLIC", "UCTT"} or any(term in text for term in ("formfactor", "kulicke", "ultra clean")):
+        return "半導体製造装置/検査周辺。AI半導体投資の波及を受けやすい銘柄"
+    if ticker == "SIMO" or "silicon motion" in text:
+        return "メモリコントローラ。NAND/ストレージサイクル再評価の受け皿"
+    if ticker == "TSEM" or "tower semiconductor" in text:
+        return "特殊プロセス半導体ファウンドリ。アナログ/産業向け需要の再評価候補"
+    if ticker == "VSH" or "vishay" in text:
+        return "ディスクリート/受動部品。産業・車載・電力周辺の在庫循環改善が焦点"
+    if ticker == "MTSI" or "macom" in text:
+        return "RF/光・通信半導体。データセンター、通信、防衛向け需要を追う銘柄"
+    if ticker == "SMTC" or "semtech" in text:
+        return "アナログ/接続半導体。データセンター、IoT、光通信寄りの再評価候補"
+    if ticker == "WULF" or "terawulf" in text:
+        return "電力付きデータセンター/暗号資産マイニング。AI計算需要への転換余地が焦点"
+    if ticker == "BW" or "babcock" in text:
+        return "産業用ボイラー/環境設備。大型案件とエネルギー設備更新で評価が変わる銘柄"
+    if ticker == "FIX" or "comfort systems" in text:
+        return "機械・電気設備工事。データセンター建設需要と受注残の厚さが焦点"
+    if ticker == "CRS" or "carpenter" in text:
+        return "特殊金属材料。航空宇宙、防衛、産業向け素材需要の再評価候補"
+    if ticker in {"NBR", "KGS", "KOS"} or any(term in text for term in ("nabors", "kodiak gas", "kosmos")):
+        return "エネルギー設備/資源開発。商品市況よりも稼働率・契約・キャッシュ創出を確認"
+    if ticker == "MRCY" or "mercury systems" in text:
+        return "防衛エレクトロニクス。防衛予算と受注回復が見立ての中心"
+    if ticker == "NVT" or "nvent" in text:
+        return "電気設備/筐体・接続部品。データセンターと産業設備投資の受益候補"
+    if ticker == "CECO" or "ceco environmental" in text:
+        return "環境・産業設備。排ガス処理や水処理など規制対応需要が焦点"
+    if ticker == "BELFB" or "bel fuse" in text:
+        return "電子部品/接続部品。電源・ネットワーク機器向け需要の回復を追う銘柄"
+    if ticker == "GTX" or "garrett" in text:
+        return "車載ターボ/自動車部品。商用車・ハイブリッド周辺の需要回復が焦点"
+    if ticker == "NOK" or "nokia" in text:
+        return "通信設備。ネットワーク更新と光/データセンター寄り事業の再評価候補"
     if "semiconductor" in text:
         if "equipment" in text:
             return "半導体製造装置/検査周辺。AI半導体投資の周辺銘柄"
@@ -278,11 +323,14 @@ def market_size_phrase(market_cap: Any = None) -> str:
 def business_demand_phrase(
     industry: str = "",
     sector: str = "",
+    symbol: str = "",
+    company: str = "",
     news_text: str = "",
     fundamental_state: str = "",
     revenue_yoy: Any = None,
 ) -> str:
-    text = f"{industry} {sector} {news_text}".lower()
+    text = f"{industry} {sector} {symbol} {company} {news_text}".lower()
+    ticker = clean_text(symbol).upper()
     rev = safe_float(revenue_yoy)
     has_demand_context = any(term in text for term in BUSINESS_DEMAND_TERMS)
     structural = any(
@@ -302,7 +350,19 @@ def business_demand_phrase(
         )
     )
     if has_demand_context:
-        return "事業需給は強い。受注・契約・顧客需要の裏取りが再評価を支える"
+        if ticker in {"STX", "WDC"}:
+            return "クラウド/AI向けデータ保管需要が強く、価格上昇と業績改善を支える"
+        if ticker in {"LITE", "MTSI", "LWLG"}:
+            return "AIデータセンターの光接続需要が、受注・契約ニュースの重要な裏取りになる"
+        if ticker in {"TTMI", "FORM", "KLIC", "UCTT"}:
+            return "AI半導体投資の周辺需要が強く、受注・稼働率の維持が見立ての核心"
+        if ticker in {"VSAT", "IRDM", "SATS", "SATL"}:
+            return "衛星サービスや通信インフラ契約が続くかが、再評価の持続条件"
+        if ticker in {"FIX", "NVT", "CECO", "BW"}:
+            return "設備投資案件と受注残の積み上がりが、業績再評価の確認材料"
+        if ticker in {"NBR", "KGS", "KOS"}:
+            return "エネルギー関連契約と稼働率が、資源市況だけに依存しない支えになる"
+        return "受注・契約・顧客需要の裏取りが、再評価の持続力を支える"
     if fundamental_state == "structural_proxy_confirmed" and structural:
         return "業種需要と中期上昇が重なり、事業側の再評価余地がある"
     return ""
@@ -384,6 +444,41 @@ def fundamental_phrase(
     return ""
 
 
+def estimate_phrase(
+    *,
+    next_quarter_revenue_growth: Any = None,
+    next_quarter_eps_growth: Any = None,
+    current_year_revenue_growth: Any = None,
+    current_year_eps_growth: Any = None,
+    next_year_revenue_growth: Any = None,
+    next_year_eps_growth: Any = None,
+    estimate_snapshot_date: str = "",
+) -> str:
+    nq_rev = safe_float(next_quarter_revenue_growth)
+    cy_rev = safe_float(current_year_revenue_growth)
+    cy_eps = safe_float(current_year_eps_growth)
+    ny_rev = safe_float(next_year_revenue_growth)
+    ny_eps = safe_float(next_year_eps_growth)
+
+    parts: list[str] = []
+    if math.isfinite(nq_rev) and abs(nq_rev) >= 0.08:
+        parts.append(f"来期売上予想は直近四半期比{pct_text(nq_rev)}")
+    if math.isfinite(cy_rev) and abs(cy_rev) >= 0.08:
+        parts.append(f"今期売上予想は過去4四半期比{pct_text(cy_rev)}")
+    if math.isfinite(cy_eps) and abs(cy_eps) >= 0.15:
+        parts.append(f"今期1株利益予想は過去4四半期比{pct_text(cy_eps)}")
+    if math.isfinite(ny_rev) and abs(ny_rev) >= 0.08:
+        parts.append(f"来年売上予想は今期予想比{pct_text(ny_rev)}")
+    if math.isfinite(ny_eps) and abs(ny_eps) >= 0.15:
+        parts.append(f"来年1株利益予想は今期予想比{pct_text(ny_eps)}")
+    if not parts:
+        return ""
+    suffix = ""
+    if clean_text(estimate_snapshot_date):
+        suffix = "（予想取得日あり）"
+    return "市場予想: " + "、".join(parts[:3]) + suffix
+
+
 def thesis_phrase(thesis_state: str, thesis_substate: str) -> str:
     if thesis_substate == "mixed_strong":
         return "見立ては強弱混在だが、価格と出来高は上位候補に近い"
@@ -419,6 +514,13 @@ def compose_seven_layer_summary(
     eps_qoq: Any = None,
     eps_yoy_prev: Any = None,
     eps_qoq_prev: Any = None,
+    next_quarter_revenue_growth_est: Any = None,
+    next_quarter_eps_growth_est: Any = None,
+    current_year_revenue_growth_est: Any = None,
+    current_year_eps_growth_est: Any = None,
+    next_year_revenue_growth_est: Any = None,
+    next_year_eps_growth_est: Any = None,
+    estimate_snapshot_date: str = "",
     market_cap: Any = None,
     avg_dollar_volume20: Any = None,
     news_text: str = "",
@@ -429,7 +531,7 @@ def compose_seven_layer_summary(
     if math.isfinite(safe_float(ret60_resid_spy)):
         market_part = f"市場比60日超過分は{pct_text(ret60_resid_spy)}"
     parts = [
-        theme_phrase(industry, sector),
+        theme_phrase(industry, sector, symbol, company),
         fundamental_phrase(
             fundamental,
             ret126,
@@ -443,10 +545,19 @@ def compose_seven_layer_summary(
             eps_yoy_prev,
             eps_qoq_prev,
         ),
+        estimate_phrase(
+            next_quarter_revenue_growth=next_quarter_revenue_growth_est,
+            next_quarter_eps_growth=next_quarter_eps_growth_est,
+            current_year_revenue_growth=current_year_revenue_growth_est,
+            current_year_eps_growth=current_year_eps_growth_est,
+            next_year_revenue_growth=next_year_revenue_growth_est,
+            next_year_eps_growth=next_year_eps_growth_est,
+            estimate_snapshot_date=estimate_snapshot_date,
+        ),
         news_signal_phrase(news_text),
         market_size_phrase(market_cap),
         volume_phrase(volume_state, dv_persistence, up_down_ratio),
-        business_demand_phrase(industry, sector, news_text, fundamental, revenue_yoy),
+        business_demand_phrase(industry, sector, symbol, company, news_text, fundamental, revenue_yoy),
         market_part if abs(safe_float(ret60_resid_spy, 0.0)) >= 0.15 else "",
         price_phrase(price_state, ret_since_entry),
         supply_phrase(
